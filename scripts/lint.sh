@@ -40,7 +40,9 @@ need() { # tool brew-formula
 section "hygiene: nothing private is tracked"
 # Data-directory layout (crates/cg-core/src/paths.rs), key material, logs, encrypted blobs.
 # Patterns are anchored to whole paths so src files like secrets.rs / paths.rs stay allowed.
-private_re='(^|/)(secrets|logs|state|corpus|index|\.cg-researcher|\.cg-agent|node_modules|target|playwright-report|test-results)/|\.(enc|key|pem|p12|pfx|der|jks|keystore|gpg|pgp|mobileprovision|provisionprofile|keychain|keychain-db|token|secret|log|pb|sqlite3|db)$|(^|/)(\.env(\..*)?|\.netrc|id_rsa.*|id_ed25519.*|ui-settings\.toml|\.DS_Store)$'
+# state/, corpus/ and index/ are generic names, so like .gitignore they only count at the
+# repo root (a data dir rooted at the checkout); a nested docs/index/ or src/state/ is fine.
+private_re='^(state|corpus|index)/|(^|/)(secrets|logs|\.cg-researcher|\.cg-agent|node_modules|target|playwright-report|test-results)/|\.(enc|key|pem|p12|pfx|der|jks|keystore|gpg|pgp|mobileprovision|provisionprofile|keychain|keychain-db|token|secret|log|pb|sqlite3|db)$|(^|/)(\.env(\..*)?|\.netrc|id_rsa.*|id_ed25519.*|ui-settings\.toml|\.DS_Store)$'
 tracked_private="$(git ls-files | grep -E "$private_re" | grep -vE '(^|/)\.env\.example$' || true)"
 if [[ -n "$tracked_private" ]]; then
   bad "private or generated files are tracked:"; indent "$tracked_private" >&2
