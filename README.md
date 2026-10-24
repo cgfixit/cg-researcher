@@ -18,7 +18,7 @@ guide for the one-time migration.
 #   --with-netviewer  (macOS) also builds CyClaw-Net-Viewer at a pinned commit
 #   --service         per-user launchd agent (com.cgfixit.cg-researcher)
 #   --maintenance     daily 03:15 launchd health check (com.cgfixit.cg-researcher.maintenance)
-ollama pull qwen3:8b && ollama pull all-minilm
+ollama pull qwen3.8:27b-mlx-cg && ollama pull gemma4-26b-a4b:ud-q4_k_xl-cg && ollama pull all-minilm
 cp ~/notes/*.md ~/.cg-researcher/corpus/ && cg-researcher index
 cg-researcher chat                   # /attach ./diagram.png   /attach ./spec.docx
 cg-researcher selftest
@@ -45,8 +45,9 @@ CLI tarball; build the app locally with `scripts/bundle-app.sh`.
 
 Any OpenAI-compatible server on loopback: Ollama (`:11434/v1`), LM Studio (`:1234/v1`),
 llama.cpp `llama-server` / `mlx_lm.server` (`:8080/v1`), vLLM. Non-loopback model URLs are
-refused unless `llm.allow_non_loopback = true`. Set `llm.vision_model` to a VLM (for example
-`qwen2.5vl:7b`) to let PNG attachments reach a model. Without it, PNGs are validated and
+refused unless `llm.allow_non_loopback = true`. Defaults: `llm.model = "qwen3.8:27b-mlx-cg"` (text generation) and `llm.vision_model = "gemma4-26b-a4b:ud-q4_k_xl-cg"`
+(multimodal, for PNG attachments). Set `llm.vision_model` to any VLM (for example
+`qwen2.5vl:7b`) to let PNG attachments reach a model. Set it to `""` and PNGs are validated and
 stripped, then not sent.
 
 ## Commands
@@ -176,12 +177,12 @@ The UI cannot change bind address, loopback rules, connectors or write approval.
 | gitleaks full-history rescan | Mon 05:23 UTC | `.github/workflows/gitleaks.yml` |
 | actionlint + zizmor + shellcheck | Mon 05:29 UTC | `.github/workflows/workflow-lint.yml` |
 | cargo-audit + cargo-deny | Mon 06:17 UTC | `.github/workflows/audit.yml` |
-| fuzz attachments + sanitizer (15 min each) | Tue 04:47 UTC | `.github/workflows/fuzz.yml` |
+| fuzz attachments + sanitizer + stream (15 min each) | Tue 04:47 UTC | `.github/workflows/fuzz.yml` |
 
 On every push and PR: `scripts/lint.sh` on an Apple Silicon runner (`lint.yml`: hygiene, fmt, clippy,
 shellcheck, actionlint, plutil). On every PR: browser end-to-end tests of the web UI in Chromium and WebKit (`ui-e2e.yml`, against a
 real `serve` and a Rust mock model), line coverage with a 70% floor (`coverage.yml`), and a 2-minute
-fuzz run when attachment, sanitizer or secret code changes. Locally:
+fuzz run when attachment, sanitizer, secret, streaming or model-client code changes. Locally:
 `cargo build -p cg-researcher --bins --examples && (cd e2e && npm ci && npx playwright install --only-shell chromium webkit && npx playwright test)`
 and `cargo +nightly fuzz run attachments`.
 
@@ -229,7 +230,7 @@ config/cg.toml        shipped defaults, copied by `init`; every gate closed
 packaging/macos       Info.plist for the .app bundle
 scripts/              lint.sh (the lint gate), install.sh, uninstall.sh, bundle-app.sh
 e2e/                  Playwright specs (Chromium + WebKit) against serve + the mock model
-fuzz/                 cargo-fuzz targets (attachments, sanitizer); own Cargo.lock, nightly only
+fuzz/                 cargo-fuzz targets (attachments, sanitizer, stream); own Cargo.lock, nightly only
 .claude/              Claude Code settings and repo skills (see Development)
 ```
 
@@ -275,10 +276,12 @@ that is `#[ignore]` off macOS, clippy `-D warnings` on 1.99.1, an MSRV 1.90 chec
 (advisories, bans, licenses, sources), and an end-to-end smoke with the mock model: `init`, `index`,
 `selftest` (10-node graph), `serve`, `/query` with sources, the DNS-rebinding (421) and missing-bearer (401)
 refusals, UI pairing, `audit verify`. Earlier passes also covered three concurrent `maintain` runs, a
-headless-browser pass over every tab, the six Playwright specs in Chromium and WebKit, 60 s fuzz runs per
-target (~3.2M inputs, no crashes), 74% line coverage, and the `.app` launch path. **Not yet run on a Mac**:
-the macOS CI matrix (macos-15 / macos-latest, Keychain, launchd, installer) is written but GitHub Actions
-has not executed it on this account. Windows is unsupported. Real Anthropic/xAI/Telegram/Twilio/Google/SerpAPI
+headless-browser pass over every tab, the Playwright specs in Chromium and WebKit (including every
+intermediate frame of a streamed answer), bounded fuzz runs per target with no open crashes, 74% line
+coverage, and the `.app` launch path. **macOS**: GitHub's macOS runners (macos-15, macos-latest) pass fmt,
+clippy, tests, the MSRV build, the throwaway-keychain round trip and `install.sh --service` / launchd /
+uninstall (first green on `main` at 94ea1aa). That is a CI runner, not a daily-use Mac: Gatekeeper on a
+downloaded `.app`, a real login keychain and Safari itself are still unverified. Windows is unsupported. Real Anthropic/xAI/Telegram/Twilio/Google/SerpAPI
 accounts were not exercised.
 
 See [SECURITY.md](SECURITY.md) and [INVARIANTS.md](INVARIANTS.md).

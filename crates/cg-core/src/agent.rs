@@ -615,13 +615,14 @@ fn first_messages(d: &Deps, s: &mut TurnState) {
         user.push_str("Local knowledge base context:\n");
         let mut budget = d.local_tuning.context_chars;
         for h in &s.retrieval.hits {
-            let (clean, flagged) = sanitize_untrusted(&h.text);
-            s.tainted |= flagged;
+            let (clean, _) = sanitize_untrusted(&h.text);
             let n = clean.chars().count();
             if n > budget {
                 break; // autotune: never overflow the model's context window
             }
             budget -= n;
+            // Corpus content is untrusted even when no injection pattern matches.
+            s.tainted = true;
             user.push_str(&format!(
                 "<untrusted source=\"corpus\" name=\"{}\">\n{clean}</untrusted>\n",
                 h.source.replace('"', "'")
@@ -784,7 +785,7 @@ async fn tool_gate(d: &Deps, mut s: TurnState) -> TurnState {
             },
             Effect::Write => {
                 let auto =
-                    d.cfg.tools.auto_approve_writes && !s.tainted && !s.req.origin.is_remote();
+                    d.cfg.tools.auto_approve_writes && !s.tainted && s.req.origin == Origin::Cli;
                 if auto {
                     Decided {
                         call: call.clone(),
