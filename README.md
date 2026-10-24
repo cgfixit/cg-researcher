@@ -132,6 +132,10 @@ and consent on **each** query (CLI `y`, the UI's "External" button, `/ext <quest
 
 - Keys live in the macOS Keychain (`keychain:cg-researcher/anthropic_api_key`, `…/xai_api_key`); paste them
   in the UI's Keys tab. Prefixes are checked (`sk-ant-`, `xai-`) and no endpoint ever returns a key.
+- Transport: TLS 1.3 only, and Mozilla's root program instead of the macOS trust store, so a locally
+  installed root CA (MDM, corporate TLS inspection) cannot read the key or prompts. On such a network
+  the call fails with a message naming `external.tls_roots`; set it to `"system"` in cg.toml only if
+  that interception is expected. See SECURITY.md "Transport (TLS)".
 - Hosts are pinned: `api.anthropic.com`, `api.x.ai` or `us.api.x.ai`. Anthropic uses `/v1/messages`;
   xAI uses `/v1/chat/completions` (not the Responses API, which stores prompts for 30 days by default).
 - External models **never** get tools. Their output marks the turn tainted, so later writes need human approval.

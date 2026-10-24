@@ -88,6 +88,6 @@ Two gates matter most:
 - I6: `cg-core` must never depend on `cg-connectors` (checked by `core_never_depends_on_connectors`).
 - I2: no telemetry; child processes use `sandbox::clean_command`; `deny.toml` bans telemetry crates.
 - I8: server answers only loopback `Host` headers, refuses cross-origin, strict no-inline CSP; UI settings changes limited to a whitelist (`settings::check_overlay`), and relaxing any `[external.rules]` needs ack plus a `policy_relaxed` audit record.
-- Model URL and HTTP bind must be loopback (`Config::validate`); all connector HTTP goes through `Egress` (host-pinned, HTTPS-only, no redirects, no proxy).
+- Model URL and HTTP bind must be loopback (`Config::validate`); all connector HTTP goes through `Egress` (host-pinned, HTTPS-only, no redirects, no proxy; non-loopback clients are `https_only` with a TLS 1.2 floor; the external-model client uses `Egress::new_tls13`: TLS 1.3 only, Mozilla roots unless cg.toml sets `external.tls_roots = "system"`).
 
 Config: defaults in `config/cg.toml`; UI overrides layer on top via `~/.cg-researcher/ui-settings.toml`. Docs: `docs/user-guide.md`, `docs/feature.md`, `SECURITY.md`.

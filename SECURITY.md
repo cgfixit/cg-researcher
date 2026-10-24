@@ -23,6 +23,29 @@ externally. cg-researcher enforces this in the graph, not in the prompt:
 - Model output is filtered: markdown images are removed and links with query strings are cut
   to their host, which closes the classic exfiltration channel.
 
+## Transport (TLS)
+
+All HTTP is reqwest on rustls; OpenSSL and native-tls are banned in `deny.toml`. Every outbound
+client is an `Egress`, which pins hosts, refuses redirects and proxies, and checks every URL.
+
+- **Every non-loopback client** is built `https_only`, so the client itself refuses `http://`
+  before any TCP connect, even if a caller skipped `Egress::check`. It pins a TLS 1.2 floor
+  (what rustls ships; written down so a backend change cannot lower it).
+- **External models** (`api.anthropic.com`, `api.x.ai`, `us.api.x.ai`) carry the API key and your
+  prompt.
+  - Their client offers **TLS 1.3 only**. The wire-level ClientHello is asserted in
+    `egress::tests::external_client_offers_only_tls13`; all three hosts negotiated TLS 1.3 when
+    checked on 2026-10-24.
+  - By default (`external.tls_roots = "mozilla"`) it trusts only Mozilla's root program, compiled
+    in from `webpki-root-certs`, not the macOS trust store. A root CA installed by an MDM profile,
+    a corporate TLS-inspection proxy or an admin-level attacker therefore cannot read the key or
+    prompts on that path. The handshake fails with `UnknownIssuer` before any HTTP bytes, including
+    the key, are sent, and the error says so.
+  - `tls_roots = "system"` restores the OS store for networks that must inspect traffic. It is a
+    cg.toml-only setting; the UI overlay rejects it.
+- **No certificate pinning.** Providers rotate intermediates and keys, and a stale pin is an
+  outage. Host pinning plus the root-program choice is the line.
+
 ## Known weaknesses (accepted, documented)
 
 - **macOS Keychain write:** `security add-generic-password -w <value>` puts the refresh token on
@@ -49,6 +72,12 @@ externally. cg-researcher enforces this in the graph, not in the prompt:
 - **Pattern-based injection filtering** is a speed bump, not a boundary. The boundaries are the
   tool gate, taint, and origin rules above.
 - `/health` is unauthenticated and reveals only `{ok, local_model}`.
+- **TLS roots:**
+  - The Mozilla-roots path does no OCSP/CRL revocation checking. The `system` path on macOS uses
+    Apple's checks, which are soft-fail.
+  - The compiled-in root set only changes when `webpki-root-certs` is bumped (Dependabot).
+  - Connectors (Google, Telegram, Twilio, SerpAPI) still use the OS trust store, so a locally
+    installed root can intercept them.
 
 ## Supply chain
 
