@@ -2,7 +2,7 @@ name: workflow-lint
 on:
   push:
     branches: ["cg/main"]
-    paths: [".github/**", "scripts/**", "*.sh", "*.command"]
+    paths: [".github/**", "scripts/**", "e2e/*.sh", "*.sh", "*.command"]
   pull_request:
   # Weekly: new actionlint/zizmor audits can flag unchanged workflows.
   schedule:
@@ -27,7 +27,7 @@ jobs:
           tar xzf al.tgz actionlint
           ./actionlint -color
       - name: shellcheck
-        run: shellcheck scripts/*.sh install.command uninstall.command init.sh
+        run: shellcheck scripts/*.sh e2e/*.sh install.command uninstall.command init.sh
   zizmor:
     runs-on: ubuntu-latest
     timeout-minutes: 10
