@@ -230,7 +230,8 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                         scopes.join(" ")
                     );
                     if cfg!(target_os = "macos") {
-                        let _ = std::process::Command::new("/usr/bin/open")
+                        let _ = clean_command(std::path::Path::new("/usr/bin/open"), &[])
+                            .into_std()
                             .arg(url)
                             .status();
                     }
@@ -481,8 +482,8 @@ async fn app(home: PathBuf) -> anyhow::Result<()> {
     };
     if !up() {
         layout.ensure()?;
-        // Detached child (outlives the app's launcher process). Same env
-        // hygiene as sandbox::clean_command: cleared env + telemetry kill.
+        // Detached child (outlives the app's launcher process), so it is a
+        // std Command (no kill_on_drop) with the sandbox's env policy applied.
         let log = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -492,20 +493,10 @@ async fn app(home: PathBuf) -> anyhow::Result<()> {
             use std::os::unix::fs::PermissionsExt;
             log.set_permissions(std::fs::Permissions::from_mode(0o600))?;
         }
-        let mut c = std::process::Command::new(std::env::current_exe()?);
-        c.env_clear().env("PATH", cg_core::sandbox::SAFE_PATH);
-        for k in ["HOME", "USER", "LANG", "TMPDIR"] {
-            if let Ok(v) = std::env::var(k) {
-                c.env(k, v);
-            }
-        }
-        for (k, v) in cg_core::sandbox::TELEMETRY_KILL {
-            c.env(k, v);
-        }
+        let mut c = clean_command(&std::env::current_exe()?, &[]).into_std();
         c.arg("--home")
             .arg(&home)
             .arg("serve")
-            .stdin(std::process::Stdio::null())
             .stdout(log.try_clone()?)
             .stderr(log)
             .spawn()?;
@@ -578,9 +569,10 @@ async fn ui(home: PathBuf, print: bool) -> anyhow::Result<()> {
         println!("{url}");
         eprintln!("single-use, expires in {}s", v["ttl_secs"]);
     } else {
-        let st = std::process::Command::new("/usr/bin/open")
+        let st = clean_command(std::path::Path::new("/usr/bin/open"), &[])
             .arg(&url)
-            .status()?;
+            .status()
+            .await?;
         anyhow::ensure!(st.success(), "open failed; rerun with --print");
         eprintln!("opened the UI (pairing code is single-use)");
     }

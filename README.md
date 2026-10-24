@@ -241,7 +241,7 @@ fuzz/                 cargo-fuzz targets (attachments, sanitizer, stream); own C
 | `rust-toolchain.toml` | Rust **1.99.1** with `rustfmt` + `clippy` (rustup only; Homebrew `rust` ignores it) |
 | `Cargo.toml` | edition 2024, `rust-version = "1.90"` (MSRV, checked by CI), `resolver = "3"`; every external crate version lives once in `[workspace.dependencies]` and the crates inherit it with `name.workspace = true` plus their own `features` |
 | `Cargo.lock` | committed; everything runs `--locked` (CI, `init.sh`, `install.sh`) |
-| `deny.toml` | license allowlist, crates.io only, `wildcards = "deny"`, and the I2 bans (`opentelemetry*`, `sentry`, `posthog-rs`, `openssl-sys`, `native-tls`); `cargo deny check advisories bans licenses sources` is the CI command |
+| `deny.toml` | license allowlist, crates.io only, `wildcards = "deny"`, and the I2 bans (the OpenTelemetry, Sentry, PostHog/Segment/Datadog/Honeycomb families, phone-home update checkers, `openssl-sys`, `native-tls`; exact names, cargo-deny has no globs); `cargo deny check advisories bans licenses sources` is the CI command |
 | `fuzz/Cargo.toml` + `fuzz/Cargo.lock` | separate package (not a workspace member), pinned nightly in `fuzz.yml`; its resolved versions match the workspace lock |
 | `e2e/package.json` + `package-lock.json` | `@playwright/test` 1.64.1 only; `npm ci --ignore-scripts` |
 | `.github/workflows/*.yml` | all actions pinned by SHA; the same `dtolnay/rust-toolchain` SHA and `1.99.1` everywhere, `1.90` for the MSRV job |
