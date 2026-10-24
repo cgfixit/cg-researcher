@@ -30,9 +30,7 @@ use crate::config::{Config, Mode};
 use crate::external::{ExternalClient, budget_take};
 use crate::llm::{OpenAiCompat, ToolCall};
 use crate::rag::{Index, Retrieval, Retriever, is_confident};
-use crate::sanitizer::{
-    InputVerdict, check_input, defang_output_links, redact, sanitize_untrusted,
-};
+use crate::sanitizer::{InputVerdict, check_input, redact, sanitize_untrusted};
 use crate::secrets::SecretStore;
 use crate::tools::{Confirmer, Effect, Origin, ToolRegistry, ToolSpec};
 use crate::tune::{ModelProfile, Tuning};
@@ -114,6 +112,8 @@ pub struct TurnState {
     answer_model: String,
     detail: String,
     path: Vec<&'static str>,
+    /// Some only for streaming callers (web UI); local-model deltas only.
+    stream: Option<crate::stream::StreamGuard>,
 }
 
 struct Deps {
@@ -345,6 +345,26 @@ impl Agent {
     }
 
     pub async fn run(&self, req: TurnRequest) -> TurnResult {
+        self.run_inner(req, None).await
+    }
+
+    /// `run`, plus guarded provisional local-model text sent to `sink` as it
+    /// is generated. The returned `TurnResult` is still the authoritative,
+    /// fully guarded answer; the sink closes when the turn ends.
+    pub async fn run_streaming(
+        &self,
+        req: TurnRequest,
+        sink: crate::stream::StreamSink,
+    ) -> TurnResult {
+        let g = crate::stream::StreamGuard::new(sink, MAX_ANSWER_CHARS);
+        self.run_inner(req, Some(g)).await
+    }
+
+    async fn run_inner(
+        &self,
+        req: TurnRequest,
+        stream: Option<crate::stream::StreamGuard>,
+    ) -> TurnResult {
         let state = TurnState {
             req,
             retrieval: Retrieval::default(),
@@ -363,6 +383,7 @@ impl Agent {
             answer_model: String::new(),
             detail: String::new(),
             path: Vec::new(),
+            stream,
         };
         let (s, trace, err) = self
             .graph
@@ -672,18 +693,36 @@ async fn local_llm(d: &Deps, mut s: TurnState) -> TurnState {
     if out_of_budget {
         s.messages.push(json!({"role":"system","content":"Tool budget reached. Answer now from what you have; say what is missing."}));
     }
-    match d
-        .local
-        .chat(
-            model,
-            &s.messages,
-            &tools,
-            d.local_tuning.max_tokens,
-            d.local_tuning.temperature,
-        )
-        .await
-    {
+    let reply = match s.stream.as_mut() {
+        Some(g) => {
+            d.local
+                .chat_stream(
+                    model,
+                    &s.messages,
+                    &tools,
+                    d.local_tuning.max_tokens,
+                    d.local_tuning.temperature,
+                    &mut |t| g.push(t),
+                )
+                .await
+        }
+        None => {
+            d.local
+                .chat(
+                    model,
+                    &s.messages,
+                    &tools,
+                    d.local_tuning.max_tokens,
+                    d.local_tuning.temperature,
+                )
+                .await
+        }
+    };
+    match reply {
         Ok(r) if !r.tool_calls.is_empty() && !out_of_budget => {
+            if let Some(g) = s.stream.as_mut() {
+                g.reset(); // provisional text belonged to a tool-call round
+            }
             let calls: Vec<Value> = r
                 .tool_calls
                 .iter()
@@ -974,7 +1013,7 @@ async fn external_fallback(d: &Deps, mut s: TurnState) -> TurnState {
 }
 
 async fn guardrail_output(_d: &Deps, mut s: TurnState) -> TurnState {
-    let (a, defanged) = defang_output_links(&redact(&s.answer));
+    let (a, defanged) = crate::sanitizer::guard_output_text(&s.answer);
     if defanged > 0 {
         s.detail = format!("{} output_links_defanged={defanged}", s.detail)
             .trim()

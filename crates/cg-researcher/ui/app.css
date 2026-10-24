@@ -37,6 +37,9 @@ label.check,label.seg{flex-direction:row;align-items:center;gap:8px;color:var(--
 input,select,textarea{font:inherit;color:var(--text);background:var(--surface-2);border:1px solid var(--border);
   border-radius:6px;padding:8px 10px;min-width:0}
 textarea{width:100%;resize:vertical}
+select{height:38px;padding-top:0;padding-bottom:0}
+.grid label.check{align-self:end;min-height:38px}
+label.off{opacity:.55}
 input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 button{font:inherit;color:var(--text);background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:8px 14px;cursor:pointer}
 button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
@@ -77,6 +80,8 @@ button.small{padding:3px 8px}
 .examples .ex{font-size:13px;border-radius:999px;padding:6px 12px}
 .msg .body{white-space:pre-wrap}
 .msg.pending .body{color:var(--muted)}
+.msg.streaming .body::after{content:"";display:inline-block;width:.5em;height:1em;margin-left:2px;vertical-align:text-bottom;background:var(--muted);animation:caret 1s steps(2,start) infinite}
+@keyframes caret{to{visibility:hidden}}
 .msg.error{border-color:var(--danger)}.msg.error .body{color:var(--danger)}
 .actions{display:flex;gap:6px;margin-top:6px}
 .meta .chips li{font-size:11px;padding:1px 7px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -93,8 +98,9 @@ label.off{opacity:.55}
   .tabs{order:3;flex-basis:100%;justify-content:space-between}
   .tabs button{padding:6px 8px;flex:1}
   main{padding:12px}.msg.user,.msg.bot{max-width:100%}
+  input,select,textarea{font-size:16px}
   .composer .row{gap:8px}
   .composer .send{margin-left:auto}
   .log{max-height:calc(100dvh - 330px)}
 }
-@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}.msg.streaming .body::after{animation:none}}

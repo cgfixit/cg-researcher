@@ -48,6 +48,22 @@ impl Redactor {
             v.sort_by_key(|s| std::cmp::Reverse(s.len()));
         }
     }
+    /// Byte length of the longest suffix of `text` that is a proper prefix of
+    /// a registered secret. A streamer must hold that tail back: the rest of
+    /// the secret may arrive in the next token, and `scrub` only sees whole
+    /// values.
+    pub fn pending_prefix_len(&self, text: &str) -> usize {
+        let v = self.values.read().unwrap_or_else(|p| p.into_inner());
+        let mut best = 0;
+        for s in v.iter() {
+            for (k, _) in s.char_indices().skip(1) {
+                if k > best && text.ends_with(&s[..k]) {
+                    best = k;
+                }
+            }
+        }
+        best
+    }
     pub fn scrub(&self, text: &str) -> String {
         let v = self.values.read().unwrap_or_else(|p| p.into_inner());
         let mut out = text.to_string();

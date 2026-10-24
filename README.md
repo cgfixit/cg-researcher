@@ -47,7 +47,7 @@ stripped, then not sent.
 |---|---|
 | `init` | owner-only `~/.cg-researcher`, default config, audit key, API key, SMS PIN |
 | `chat` | CLI turn loop; the only origin that can approve writes interactively |
-| `serve` | `127.0.0.1:8797` API (`/health`, `/query`, `/tools`, `/api/*`) + web UI + enabled gateways |
+| `serve` | `127.0.0.1:8797` API (`/health`, `/query`, `/query/stream`, `/tools`, `/api/*`) + web UI + enabled gateways |
 | `ui [--print]` | mint a single-use pairing code and open `http://127.0.0.1:8797/#p=…` |
 | `maintain` | selftest + audit-chain verify, recorded in the audit log; non-zero exit on failure |
 | `gateways` | Telegram / SMS only |
@@ -146,6 +146,12 @@ autotune), Rules, Keys, Status (graph, budgets, audit verify). The UI is compile
 has no CDN or remote assets. It runs under a strict CSP (`default-src 'none'`, no inline script). The
 server answers only `Host: 127.0.0.1|localhost|[::1]` (DNS-rebinding guard) and refuses
 cross-origin requests. Settings changes are limited to a whitelist (model, rules, provider, keys).
+Chat answers from the local model stream in as they are generated (`POST /query/stream`,
+server-sent events). Each streamed piece has already been through the output guard (secret
+redaction, link defanging, `<think>` stripping), and text is held back at a word boundary so a
+secret split across tokens never reaches the page half-written. The `final` event carries the
+authoritative answer, which replaces the streamed text. External-model answers and the CLI are not
+streamed.
 The UI cannot change bind address, loopback rules, connectors or write approval. Overrides go to
 `~/.cg-researcher/ui-settings.toml` (0600), layered over `cg.toml`.
 
