@@ -1,0 +1,49 @@
+name: coverage
+# Line/region coverage with cargo-llvm-cov. Fails below the floor so a PR
+# can't quietly drop tests; ratchet the floor up as coverage improves.
+# Measured 74.3% lines on Linux (2026-10-24); the macOS-only Keychain
+# path is not exercised here. Summary goes to the job page, lcov.info
+# is an artifact. No third-party upload service.
+on:
+  push:
+    branches: ["cg/main"]
+    paths-ignore: ["**.md", "LICENSE"]
+  pull_request:
+    paths-ignore: ["**.md", "LICENSE"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  CARGO_TERM_COLOR: always
+  COVERAGE_FLOOR: "70"
+jobs:
+  llvm-cov:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10
+        with:
+          toolchain: 1.99.1
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo install cargo-llvm-cov --version 0.9.1 --locked
+      - name: test with coverage (floor ${{ env.COVERAGE_FLOOR }}% lines)
+        run: |
+          set -euo pipefail
+          cargo llvm-cov --workspace --locked --summary-only --fail-under-lines "$COVERAGE_FLOOR" | tee summary.txt
+      - name: job summary
+        if: always()
+        run: |
+          { echo '### Coverage'; echo '```'; tail -n 40 summary.txt 2>/dev/null || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - run: cargo llvm-cov report --lcov --output-path lcov.info
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lcov
+          path: lcov.info
+          retention-days: 14

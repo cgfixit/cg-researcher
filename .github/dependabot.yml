@@ -14,3 +14,15 @@ updates:
     target-branch: cg/main
     schedule: { interval: weekly }
     cooldown: { default-days: 7 }
+  - package-ecosystem: cargo
+    directory: /fuzz
+    target-branch: cg/main
+    schedule: { interval: monthly }
+    cooldown: { default-days: 7 }
+    open-pull-requests-limit: 2
+  - package-ecosystem: npm
+    directory: /e2e
+    target-branch: cg/main
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7 }
+    open-pull-requests-limit: 2

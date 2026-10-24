@@ -158,6 +158,13 @@ The UI cannot change bind address, loopback rules, connectors or write approval.
 | gitleaks full-history rescan | Mon 05:23 UTC | `.github/workflows/gitleaks.yml` |
 | actionlint + zizmor + shellcheck | Mon 05:29 UTC | `.github/workflows/workflow-lint.yml` |
 | cargo-audit + cargo-deny | Mon 06:17 UTC | `.github/workflows/audit.yml` |
+| fuzz attachments + sanitizer (15 min each) | Tue 04:47 UTC | `.github/workflows/fuzz.yml` |
+
+On every PR: browser end-to-end tests of the web UI in Chromium and WebKit (`ui-e2e.yml`, against a
+real `serve` and a Rust mock model), line coverage with a 70% floor (`coverage.yml`), and a 2-minute
+fuzz run when attachment, sanitizer or secret code changes. Locally:
+`cargo build -p cg-researcher --bins --examples && (cd e2e && npm ci && npx playwright install --only-shell chromium webkit && npx playwright test)`
+and `cargo +nightly fuzz run attachments`.
 
 launchd is preferred on macOS because it runs a missed job after wake. If you prefer cron anyway:
 
@@ -204,10 +211,11 @@ packaging/macos       Info.plist for the .app bundle
 
 ## Status
 
-Verified in this repo's sandbox on Linux x86_64. That covers 114 unit and mock-HTTP tests (graph, audit,
+Verified in this repo's sandbox on Linux x86_64. That covers 116 unit and mock-HTTP tests (graph, audit,
 connectors, external providers via a loopback mock, the UI/HTTP security surface), clippy `-D warnings`
 on 1.99.1, an MSRV 1.90 check, and an end-to-end smoke with `serve`, three concurrent `maintain` runs, UI
-pairing, a headless-browser pass over every tab, and the `.app` launch path. **Not yet run on a Mac**: the macOS CI matrix
+pairing, a headless-browser pass over every tab, 12 Playwright UI tests (Chromium + WebKit), 60 s
+fuzz runs per target (~3.2M inputs, no crashes), 74% line coverage, and the `.app` launch path. **Not yet run on a Mac**: the macOS CI matrix
 (macos-15 / macos-26, Keychain, launchd, installer) is written but GitHub Actions has not executed it
 on this account. Windows is unsupported. Real Anthropic/xAI/Telegram/Twilio/Google/SerpAPI accounts
 were not exercised.
