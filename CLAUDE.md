@@ -29,6 +29,33 @@ cargo llvm-cov --workspace --locked --summary-only --fail-under-lines 70   # CI 
 - Browser e2e (`e2e/`, Playwright Chromium + WebKit): needs the mock model (`cargo run -p cg-researcher --example mock_llm`, listens on 127.0.0.1:11434), then `cd e2e && npm ci --ignore-scripts && npx playwright test`. `e2e/start-server.sh` builds a throwaway home and runs `serve --no-gateways`.
 - Shell scripts are shellchecked in CI (`scripts/*.sh e2e/*.sh *.command init.sh`).
 
+## How to verify work here
+
+Lint first, then run the real binary. Reach for the test suite last.
+
+1. **Lint, always**: `scripts/lint.sh` (add `--fast` to skip clippy while iterating). It is written for macOS (bash 3.2, BSD userland) and is what CI's `lint` job runs on an Apple Silicon runner, so a clean local run predicts a clean CI run. It covers repo hygiene (below), `cargo fmt`, `clippy -D warnings`, `shellcheck`, `actionlint`, `zizmor` when installed, and `plutil` on macOS. Install the linters once with `brew install shellcheck actionlint zizmor`. Any change under `.github/` or to a shell script gets `actionlint` and `shellcheck` before it is committed, not after CI fails.
+2. **Run the code instead of the test suite** while developing: build and exercise the binary against a throwaway home, and watch what it actually does.
+   ```bash
+   H="$(mktemp -d)"
+   cargo run -q -p cg-researcher -- --home "$H" init
+   cargo run -q -p cg-researcher -- --home "$H" selftest
+   cargo run -q -p cg-researcher -- --home "$H" audit verify
+   # UI / server work: `cargo run -p cg-researcher --example mock_llm` in one shell, then
+   # cargo run -q -p cg-researcher -- --home "$H" serve --no-gateways   and curl / open the UI
+   ```
+   Prefer a `cargo run` or a short script that reproduces the behavior over writing or running a test for it. Run `cargo test` only when asked, when a change touches logic the lints and a live run cannot judge (graph routing, gates, sanitizer, audit chain), or just before opening a PR. CI runs the full suite on macOS on every PR anyway.
+3. **macOS is the target**. Anything written to run locally (scripts, Makefile-style helpers, CI steps that mirror local commands) must work on a stock Mac: `/bin/bash` 3.2 (no associative arrays, `mapfile`, `${var,,}`), BSD `sed`/`stat`/`date`, `shasum -a 256` not `sha256sum`. Keychain, launchd and the installer can only be exercised on a Mac or the macOS CI jobs; say so when a change touches them and the sandbox is Linux.
+
+## Repo hygiene (privacy)
+
+Nothing from a data directory ever enters git. `scripts/lint.sh --hygiene` enforces this and CI runs it on every push; `.gitignore` carries the patterns.
+
+- Never track: a `--home` or `~/.cg-researcher` / `.cg-agent` tree or its parts (`secrets/`, `logs/`, `state/`, `corpus/`, `index/`, `ui-settings.toml`, `*.pb`, `*.sqlite3`), any log file, key material or encrypted blobs (`*.key`, `*.enc`, `*.pem`, `*.p12`, `*.gpg`, `*.keychain-db`, `*.mobileprovision`), `.env*` except `.env.example`, `.DS_Store`, `node_modules`, Playwright reports, fuzz corpora, model weights (`*.gguf`, `*.safetensors`), profiling output (`*.profraw`, `*.trace/`, `*.dSYM/`), `.claude/settings.local.json`, `.claude/worktrees/`, `CLAUDE.local.md`.
+- When experimenting, pass `--home "$(mktemp -d)"` or set `CG_HOME` outside the repo. Do not create a data dir inside the checkout.
+- Secrets in config are references only (`env:` / `op://` / `keychain:` / `file:`), never values (`crates/cg-core/src/secrets.rs`). If a real key or token ever lands in a commit, rotate it; a force-push does not un-leak it. `gitleaks` scans every push and the full history weekly; extend `.gitleaks.toml` only for exact public test fixtures.
+- Old or rotated keys: delete them from the data dir (`secrets/`) and the Keychain, do not park them in the repo, `docs/`, or `security/`.
+- `security/` holds audit deliverables (report, SARIF, diff), not credentials or scan logs.
+
 Lints: `unsafe_code = "forbid"` workspace-wide; `clippy::unwrap_used` warns, `dbg_macro` denies. Clippy runs with `-D warnings`, so avoid `unwrap()` in non-test code.
 
 `scripts/install.sh` needs Xcode CLT and a native arm64 rustup (it rejects Rosetta shells and Rust older than 1.90). Nothing in this sandbox can run it, so changes to it, Keychain code or the launchd plists are unverified until a Mac or the macOS CI runs them.
