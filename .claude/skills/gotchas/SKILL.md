@@ -103,6 +103,20 @@ Only what `CLAUDE.md` and `INVARIANTS.md` do not already say: the "looks green f
 - **Symptom:** A push does not re-trigger the external review; the fixes to review findings are the diffs most worth a second look and go unreviewed.
 - **Right fix:** Tell the operator the fixes are unreviewed and let them decide. The rule is in `CLAUDE.md` and is not negotiable from inside a session.
 
+## 14. `npm ci` in a sandbox with `NODE_ENV=production` never installs Playwright
+
+- **Symptom:** `cd e2e && npm ci --ignore-scripts` prints "up to date" in under a second, `e2e/node_modules/@playwright/` is an empty directory, and `npx playwright test` fails with `Cannot find package '@playwright/test'` (or silently runs some other Playwright found on `PATH`).
+- **Wrong fix:** `npm install @playwright/test` by hand (drifts from the lockfile), or `npx playwright install` (downloads browsers for the wrong version).
+- **Right fix:** `@playwright/test` is a devDependency and npm omits devDependencies whenever `NODE_ENV=production` or `npm config get omit` says `dev`. Run `npm ci --include=dev --ignore-scripts`, or unset `NODE_ENV` first. CI runners do not set it, which is why `ui-e2e.yml` never sees this.
+- **Evidence:** `e2e/package.json` (`devDependencies`), `.github/workflows/ui-e2e.yml` "install pinned Playwright" step; hit in a Claude cloud sandbox on 2026-10-24.
+
+## 15. WebKit's cold start is billed to the first WebKit spec
+
+- **Symptom:** `ui-e2e` is red with exactly one failure, the first `[webkit]` spec, `page.goto: Test timeout of 30000ms exceeded`, while the same spec passes in Chromium and every other WebKit spec passes. A re-run is green.
+- **Wrong fix:** `retries: 1` (hides real flakes), or bumping the `webServer` timeouts (the server was already answering; Chromium had just finished nine specs against it).
+- **Right fix:** Playwright launches each project's browser as a worker fixture and charges that time to the project's first test. `e2e/playwright.config.mjs` sets `timeout: 60_000` for this reason; keep `retries: 0` so a flaky spec still fails visibly. If the first WebKit spec still times out at 60 s, the cause is not launch time.
+- **Evidence:** `main` @ dfdd773, run 40140598906 (attempt 1 red, attempt 2 green with no change); `e2e/playwright.config.mjs` comment above `timeout`.
+
 ## Related skills
 
 `verify` for the local gate; `run-cg-researcher` before claiming a change works; `invariants-check` and `config-guard` for gate, audit, sanitizer, HTTP guard and config diffs. None of them is push or merge authorization.
