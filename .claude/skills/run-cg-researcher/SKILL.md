@@ -29,8 +29,9 @@ MOCK=target/debug/examples/mock_llm
 H="$(mktemp -d)"
 "$BIN" --home "$H" init
 mkdir -p "$H/corpus" && printf '# Veeam immutability\nHardened Linux repositories keep backups immutable.\n' > "$H/corpus/veeam.md"
+if curl -fs 127.0.0.1:11434/v1/models >/dev/null 2>&1; then echo "port 11434 is taken (Ollama?): stop it first" >&2; exit 1; fi
 "$MOCK" 127.0.0.1:11434 &  MOCK_PID=$!
-curl -fs 127.0.0.1:11434/v1/models >/dev/null   # mock is up
+until curl -fs 127.0.0.1:11434/v1/models >/dev/null; do kill -0 "$MOCK_PID" || { echo "mock died" >&2; exit 1; }; sleep 0.2; done
 "$BIN" --home "$H" index
 "$BIN" --home "$H" selftest
 ```
