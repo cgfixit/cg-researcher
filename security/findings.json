@@ -1,34 +1,50 @@
 {
-  "generated": "2026-10-24",
-  "target": "cgfixit/cg-researcher@cg/main",
-  "packages_scanned": 311,
-  "scanners": {
-    "cargo-audit 0.22.2": {
-      "vulnerabilities": 0,
-      "warnings": 0
-    },
-    "osv-scanner 2.7.0": {
-      "vulnerabilities": 0
-    },
-    "cargo-deny 0.20.2": {
-      "advisories": "ok",
-      "bans": "ok (dup-version warnings only)",
-      "licenses": "ok",
-      "sources": "ok"
-    },
-    "zizmor 1.31.1": {
-      "findings": 0,
-      "pedantic_help": 3
-    },
-    "actionlint 1.7.12": "clean",
-    "shellcheck": "clean",
-    "clippy -D warnings": "clean"
+ "generated": "2026-10-24",
+ "target": "cgfixit/cg-researcher@cg/main",
+ "packages_scanned": 311,
+ "scanners": {
+  "cargo-audit 0.22.2": {
+   "vulnerabilities": 0,
+   "warnings": 0
   },
-  "cve_findings": [],
-  "accepted_risks": 6,
-  "resolved": [
-    "CG-ACC-002",
-    "CG-ACC-004",
-    "audit-chain-fork-on-concurrent-writers"
-  ]
+  "osv-scanner 2.7.0": {
+   "vulnerabilities": 0
+  },
+  "cargo-deny 0.20.2": {
+   "advisories": "ok",
+   "bans": "ok (dup-version warnings only)",
+   "licenses": "ok",
+   "sources": "ok"
+  },
+  "zizmor 1.31.1": {
+   "findings": 0,
+   "workflows": 5
+  },
+  "actionlint 1.7.12": "clean",
+  "shellcheck": "clean",
+  "clippy -D warnings": "clean",
+  "gitleaks 8.30.1": {
+   "history": "clean",
+   "worktree": "clean",
+   "allowlisted": 1
+  }
+ },
+ "cve_findings": [],
+ "accepted_risks": 7,
+ "resolved": [
+  "CG-ACC-002",
+  "CG-ACC-004",
+  "audit-chain-fork-on-concurrent-writers",
+  "deny-license-allowlist-trimmed"
+ ],
+ "decisions": [
+  {
+   "id": "CG-DEC-RAG-1",
+   "component": "sqlite-vec 0.1.9 (C)",
+   "decision": "rejected/removed",
+   "reason": "pre-1.0 C + only unsafe FFI; prior CVE-2024-46488; unchecked pzErrMsg write; brute-force KNN gives no speed win",
+   "advisory_url": "https://github.com/advisories/GHSA-vrcx-gx3g-j3h8",
+   "replacement": "SQLite FTS5 BM25 + exact in-RAM cosine (safe Rust), RRF"
+  }
+ ]
 }

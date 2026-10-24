@@ -1,0 +1,10 @@
+# Extends the default ruleset; allowlists only exact, public test fixtures.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Telegram Bot API documentation example token used in sanitizer tests"
+condition = "AND"
+regexTarget = "match"
+regexes = ['''AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsawQ''']
+paths = ['''crates/cg-core/src/sanitizer\.rs''']

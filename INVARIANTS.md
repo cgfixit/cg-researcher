@@ -14,5 +14,9 @@ Change one only with a test and a SECURITY.md note.
 | I7 | Remote origins (Telegram, SMS) need a non-empty allowlist (fail loud), get read tools only, and cannot approve writes; tainted turns never auto-approve writes | new | `tool_gate`, gateway `build` | `telegram::tests::*`, `sms::tests::pin_allowlist_and_lockout`, `agent::tests::remote_origins_are_never_offered_write_tools`, `auto_approve_never_applies_to_tainted_turns` |
 | I8 | The UI/HTTP surface answers only loopback Host headers, refuses cross-origin requests, serves a no-inline CSP, can change only whitelisted settings, and needs explicit acknowledgement plus an audit record to relax any rule | new | `serve::guard`, `settings::check_overlay`, `settings::relaxations` | `cg-researcher::tests::host_and_origin_checks_block_dns_rebinding`, `every_response_carries_strict_security_headers`, `settings_require_auth_whitelist_and_ack_for_relaxations`, `ui_assets_have_no_inline_script_or_html_injection_sinks` |
 
-Also: model URL and HTTP bind must be loopback (`Config::validate`); all connector HTTP goes through
+Also: `unsafe_code = "forbid"` across the workspace and no SQLite extensions, so memory safety
+outside SQLite rests on the compiler. FTS5 queries are built only from quoted tokenizer terms
+(`rag::tests::fts_query_neutralizes_fts5_syntax`); the index file is 0600 and the serving
+connection is `query_only` (`rag::tests::running_retriever_sees_a_rebuild_from_another_connection`).
+Model URL and HTTP bind must be loopback (`Config::validate`); all connector HTTP goes through
 a host-pinned, HTTPS-only, no-redirect, no-proxy `Egress`; the API key is compared in constant time.
