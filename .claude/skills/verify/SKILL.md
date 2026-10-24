@@ -7,17 +7,13 @@ description: Run the cg-researcher local gate (fmt, clippy -D warnings, shellche
 
 Lint first, then exercise the real binary. Run the full test suite only when asked, or when a change touches logic the lints cannot judge (CI runs it on every PR anyway).
 
-1. Format and lint, exactly as CI does:
+1. The lint gate, which is exactly what CI's `lint` job runs on an Apple Silicon runner:
    ```bash
-   cargo fmt --all --check
-   cargo clippy --workspace --all-targets --locked -- -D warnings
+   scripts/lint.sh            # hygiene, cargo fmt, clippy -D warnings, shellcheck, actionlint, zizmor, plutil (macOS)
+   scripts/lint.sh --fast     # same without clippy, while iterating
    ```
-   `unwrap_used` warns and CI uses `-D warnings`, so no `unwrap()` outside tests.
-2. Scripts, if any `*.sh` or `*.command` changed (CI shellchecks `scripts/*.sh e2e/*.sh install.command uninstall.command init.sh`):
-   ```bash
-   shellcheck scripts/*.sh e2e/*.sh install.command uninstall.command init.sh
-   bash -n scripts/install.sh && ./scripts/install.sh --print-plist | plutil -lint -   # plutil is macOS only
-   ```
+   `unwrap_used` warns and CI uses `-D warnings`, so no `unwrap()` outside tests. Read the `skip:` lines: on a machine without `shellcheck` or `actionlint` the script still exits 0, and a skipped linter is an unverified step, not a pass (`brew install shellcheck actionlint zizmor` on a Mac). Under `CI=1` a missing linter is a hard failure.
+2. Scripts and workflows, if any `*.sh`, `*.command` or `.github/workflows/*.yml` changed: step 1 covers them when the linters are present. Without them, at least `bash -n` every touched script and `./scripts/install.sh --print-plist | plutil -lint -` on a Mac.
 3. Dependencies, if any `Cargo.toml`, `Cargo.lock` or `deny.toml` changed, exactly as `audit.yml` runs it:
    ```bash
    cargo metadata --format-version 1 --locked >/dev/null   # the lock still matches the manifests
