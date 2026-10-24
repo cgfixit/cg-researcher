@@ -215,7 +215,7 @@ function meta(r) {
   const box = el('div', { class: 'meta' });
   const model = r.answer_model || 'paused';
   box.append(el('span', { class: 'tag' + (model.startsWith('external') ? ' ext' : '') }, model));
-  if (r.tainted) box.append(el('span', { class: 'tag warn', title: 'Turn contained untrusted content' }, 'tainted'));
+  if (r.tainted) box.append(el('span', { class: 'tag warn', title: 'Additional safeguards apply; automatic write approval is disabled' }, 'Protected context'));
   if (r.blocked) box.append(el('span', { class: 'tag warn' }, 'blocked'));
   if (r.sources && r.sources.length) {
     const ul = el('ul', { class: 'chips', 'aria-label': 'Sources' });
@@ -601,6 +601,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#refreshBtn').addEventListener('click', guard(refresh, '#verifyMsg'));
   $('#reindexBtn').addEventListener('click', guard(onReindex, '#verifyMsg'));
   $('#verifyBtn').addEventListener('click', guard(onVerify, '#verifyMsg'));
+  // Chat stays hidden until the single-use code is a session. The composer is
+  // otherwise usable during that exchange, and a submit with no token paints
+  // "not paired" (WebKit in CI wins that race).
   if (!(await pair())) { lock(); return; }
   document.body.classList.remove('locked');
   $('#locked').hidden = true;

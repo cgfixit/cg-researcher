@@ -56,6 +56,8 @@ pub struct AppState {
     pub sessions: Mutex<Vec<(String, Instant)>>,
     /// Single-use pairing tokens minted by `cg-researcher ui`.
     pub pairing: Mutex<Vec<(String, Instant)>>,
+    /// Client nonce, server challenge and expiry for local CLI authentication.
+    pub challenges: Mutex<Vec<(String, String, Instant)>>,
 }
 
 impl AppState {
@@ -73,6 +75,7 @@ impl AppState {
             recent: Mutex::default(),
             sessions: Mutex::default(),
             pairing: Mutex::default(),
+            challenges: Mutex::default(),
         }
     }
 }
@@ -119,6 +122,36 @@ struct PairBody {
     pair: String,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChallengeBody {
+    nonce: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LocalPairBody {
+    nonce: String,
+    challenge: String,
+    proof: String,
+}
+
+/// Separate labels prevent a server proof from serving as client authentication.
+pub fn pairing_proof(key: &str, side: &str, nonce: &str, challenge: &str) -> String {
+    use hmac::{Hmac, KeyInit, Mac};
+    let mut mac =
+        Hmac::<sha2::Sha256>::new_from_slice(key.as_bytes()).expect("HMAC accepts any key length");
+    mac.update(b"cg-researcher-ui-pair-v1:");
+    mac.update(side.as_bytes());
+    mac.update(nonce.as_bytes());
+    mac.update(challenge.as_bytes());
+    hex::encode(mac.finalize().into_bytes())
+}
+
+fn is_token(t: &str) -> bool {
+    t.len() == 64 && t.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
 pub fn router(state: Arc<AppState>, max_body: usize) -> Router {
     Router::new()
         .route("/", get(index))
@@ -131,6 +164,8 @@ pub fn router(state: Arc<AppState>, max_body: usize) -> Router {
         .route("/query/stream", post(query_stream))
         .route("/tools", get(tools))
         .route("/api/pair", post(pair))
+        .route("/api/pair/challenge", post(pair_challenge))
+        .route("/api/pair/local", post(pair_local))
         .route("/api/session", post(session))
         .route("/api/status", get(status))
         .route("/api/models", get(models))
@@ -304,6 +339,66 @@ async fn pair(State(s): State<Arc<AppState>>, h: HeaderMap) -> Response {
     if let Err(r) = gate_with(&s, &h, false).await {
         return r;
     }
+    mint_pair(&s).await
+}
+
+async fn pair_challenge(
+    State(s): State<Arc<AppState>>,
+    body: Result<Json<ChallengeBody>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    if !rate_ok(&s).await {
+        return err(StatusCode::TOO_MANY_REQUESTS, "rate limited");
+    }
+    let b = match json_body(body) {
+        Ok(b) if is_token(&b.nonce) => b,
+        _ => return err(StatusCode::BAD_REQUEST, "invalid nonce"),
+    };
+    let challenge = match random_token() {
+        Ok(t) => t,
+        Err(r) => return r,
+    };
+    let proof = pairing_proof(&s.api_key, "server", &b.nonce, &challenge);
+    let now = Instant::now();
+    let mut pending = s.challenges.lock().await;
+    pending.retain(|(_, _, exp)| *exp > now);
+    if pending.len() >= 4 {
+        pending.remove(0);
+    }
+    pending.push((b.nonce, challenge.clone(), now + PAIR_TTL));
+    Json(json!({"challenge": challenge, "proof": proof})).into_response()
+}
+
+async fn pair_local(
+    State(s): State<Arc<AppState>>,
+    body: Result<Json<LocalPairBody>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    if !rate_ok(&s).await {
+        return err(StatusCode::TOO_MANY_REQUESTS, "rate limited");
+    }
+    let b = match json_body(body) {
+        Ok(b) if is_token(&b.nonce) && is_token(&b.challenge) && is_token(&b.proof) => b,
+        _ => return err(StatusCode::BAD_REQUEST, "invalid pairing proof"),
+    };
+    let expected = pairing_proof(&s.api_key, "client", &b.nonce, &b.challenge);
+    if !ct_eq(&expected, &b.proof) {
+        return err(StatusCode::UNAUTHORIZED, "invalid pairing proof");
+    }
+    let found = {
+        let mut pending = s.challenges.lock().await;
+        pending.retain(|(_, _, exp)| *exp > Instant::now());
+        pending
+            .iter()
+            .position(|(n, c, _)| n == &b.nonce && c == &b.challenge)
+            .map(|i| pending.remove(i))
+            .is_some()
+    };
+    if !found {
+        return err(StatusCode::UNAUTHORIZED, "challenge invalid or expired");
+    }
+    mint_pair(&s).await
+}
+
+async fn mint_pair(s: &AppState) -> Response {
     let tok = match random_token() {
         Ok(t) => t,
         Err(r) => return r,

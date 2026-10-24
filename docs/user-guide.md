@@ -39,6 +39,8 @@ attachments to reach a model, set `llm.vision_model` (default `gemma4-26b-a4b:ud
   and New chat (clears the page only; nothing is stored). Status → Reindex corpus does the same as
   `cg-researcher index` without leaving the browser. If the server restarts, the page says "Session
   ended"; run `cg-researcher ui` again.
+  The "Protected context" badge means additional safeguards apply and automatic write approval
+  is disabled. CLI chat uses the same wording; the underlying policy is unchanged.
 - `cg-researcher index`: re-run after adding or changing files, or after changing `embed_model`. A running server
   picks up the new index without a restart. The UI button calls `POST /api/reindex` (authenticated).
 - HTTP: `POST 127.0.0.1:8797/query` with `Authorization: Bearer $(cat ~/.cg-researcher/secrets/api.key)`.
