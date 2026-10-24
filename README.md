@@ -54,9 +54,9 @@ stripped, then not sent.
 
 | command | what it does |
 |---|---|
-| `init` | owner-only `~/.cg-researcher`, default config, audit key, API key, SMS PIN |
 | `chat` | CLI turn loop; the only origin that can approve writes interactively |
 | `serve` | `127.0.0.1:8797` API (`/health`, `/query`, `/query/stream`, `/tools`, `/api/*`) + web UI + enabled gateways |
+| `init [--force-config]` | owner-only `~/.cg-researcher`, default config (`--force-config` rewrites it from the shipped default), audit key, API key, SMS PIN |
 | `ui [--print]` | mint a single-use pairing code and open `http://127.0.0.1:8797/#p=…` |
 | `maintain` | selftest + audit-chain verify, recorded in the audit log; non-zero exit on failure |
 | `gateways` | Telegram / SMS only |
@@ -151,8 +151,9 @@ and consent on **each** query (CLI `y`, the UI's "External" button, `/ext <quest
 
 ## Web UI
 
-`cg-researcher ui` asks the running server for a one-time pairing code (API key required, 120 s TTL,
-single use). It then opens the browser on a URL whose `#fragment` carries the code: browsers never send
+`cg-researcher ui` first proves it is talking to its own server (fresh nonce, HMAC server proof keyed by
+the local API key; an impostor on the port is refused) and then redeems a client proof for a one-time
+pairing code (120 s TTL, single use). The API key itself is never sent. It then opens the browser on a URL whose `#fragment` carries the code: browsers never send
 fragments to servers, and the page wipes it from history. The page swaps the code for a 12-hour
 session token kept in `sessionStorage`. Tabs: Chat (local / auto / external), Models (switch +
 autotune), Rules, Keys, Status (graph, budgets, audit verify). The UI is compiled into the binary and
@@ -175,15 +176,15 @@ The UI cannot change bind address, loopback rules, connectors or write approval.
 | `cg-researcher maintain` (selftest + audit verify) | daily 03:15 local | launchd `com.cgfixit.cg-researcher.maintenance` via `install.sh --maintenance` |
 | CI on macOS (build, test, Keychain, install smoke) | Mon 07:41 UTC | `.github/workflows/ci.yml` |
 | gitleaks full-history rescan | Mon 05:23 UTC | `.github/workflows/gitleaks.yml` |
-| actionlint + zizmor + shellcheck | Mon 05:29 UTC | `.github/workflows/workflow-lint.yml` |
+| actionlint + zizmor + shellcheck + `scripts/test-uninstall.py` | Mon 05:29 UTC | `.github/workflows/workflow-lint.yml` |
 | cargo-audit + cargo-deny | Mon 06:17 UTC | `.github/workflows/audit.yml` |
 | fuzz attachments + sanitizer + stream (15 min each) | Tue 04:47 UTC | `.github/workflows/fuzz.yml` |
 
-On every push and PR: `scripts/lint.sh` on an Apple Silicon runner (`lint.yml`: hygiene, fmt, clippy,
-shellcheck, actionlint, plutil). On every PR: browser end-to-end tests of the web UI in Chromium and WebKit (`ui-e2e.yml`, against a
+On every PR and every push to `main`: `scripts/lint.sh` on an Apple Silicon runner (`lint.yml`: hygiene,
+fmt, clippy, cargo deny when installed, shellcheck, actionlint, plutil). On every PR: browser end-to-end tests of the web UI in Chromium and WebKit (`ui-e2e.yml`, against a
 real `serve` and a Rust mock model), line coverage with a 70% floor (`coverage.yml`), and a 2-minute
 fuzz run when attachment, sanitizer, secret, streaming or model-client code changes. Locally:
-`cargo build -p cg-researcher --bins --examples && (cd e2e && npm ci && npx playwright install --only-shell chromium webkit && npx playwright test)`
+`cargo build -p cg-researcher --bins --examples && (cd e2e && npm ci --ignore-scripts && npx playwright install --only-shell chromium webkit && npx playwright test)`
 and `cargo +nightly fuzz run attachments`.
 
 launchd is preferred on macOS because it runs a missed job after wake. If you prefer cron anyway:
@@ -228,7 +229,7 @@ crates/cg-connectors  everything that talks to a third party
 crates/cg-researcher  the binary (clap, axum, embedded UI from crates/cg-researcher/ui)
 config/cg.toml        shipped defaults, copied by `init`; every gate closed
 packaging/macos       Info.plist for the .app bundle
-scripts/              lint.sh (the lint gate), install.sh, uninstall.sh, bundle-app.sh
+scripts/              lint.sh (the lint gate), install.sh, uninstall.sh, test-uninstall.py, bundle-app.sh
 e2e/                  Playwright specs (Chromium + WebKit) against serve + the mock model
 fuzz/                 cargo-fuzz targets (attachments, sanitizer, stream); own Cargo.lock, nightly only
 .claude/              Claude Code settings and repo skills (see Development)
@@ -270,9 +271,9 @@ CI's job. The lints are strict: `unsafe_code = "forbid"`, `clippy::unwrap_used` 
 
 ## Status
 
-Verified in this repo's sandbox on Linux x86_64. That covers 131 unit and mock-HTTP tests (graph, audit,
-connectors, external providers via a loopback mock, the UI/HTTP security surface) plus one Keychain test
-that is `#[ignore]` off macOS, clippy `-D warnings` on 1.99.1, an MSRV 1.90 check, `cargo deny`
+Verified in this repo's sandbox on Linux x86_64. That covers the unit and mock-HTTP tests (graph, audit,
+connectors, external providers via a loopback mock, the UI/HTTP security surface; `cargo test --workspace
+--locked` prints the current count) plus one Keychain test that is `#[ignore]` off macOS, clippy `-D warnings` on 1.99.1, an MSRV 1.90 check, `cargo deny`
 (advisories, bans, licenses, sources), and an end-to-end smoke with the mock model: `init`, `index`,
 `selftest` (10-node graph), `serve`, `/query` with sources, the DNS-rebinding (421) and missing-bearer (401)
 refusals, UI pairing, `audit verify`. Earlier passes also covered three concurrent `maintain` runs, a
@@ -280,8 +281,14 @@ headless-browser pass over every tab, the Playwright specs in Chromium and WebKi
 intermediate frame of a streamed answer), bounded fuzz runs per target with no open crashes, 74% line
 coverage, and the `.app` launch path. **macOS**: GitHub's macOS runners (macos-15, macos-latest) pass fmt,
 clippy, tests, the MSRV build, the throwaway-keychain round trip and `install.sh --service` / launchd /
-uninstall (first green on `main` at 94ea1aa). That is a CI runner, not a daily-use Mac: Gatekeeper on a
+uninstall ([ci.yml runs on `main`](https://github.com/cgfixit/cg-researcher/actions/workflows/ci.yml?query=branch%3Amain)). That is a CI runner, not a daily-use Mac: Gatekeeper on a
 downloaded `.app`, a real login keychain and Safari itself are still unverified. Windows is unsupported. Real Anthropic/xAI/Telegram/Twilio/Google/SerpAPI
 accounts were not exercised.
 
 See [SECURITY.md](SECURITY.md) and [INVARIANTS.md](INVARIANTS.md).
+
+## License
+
+MIT, see [LICENSE](LICENSE). Portions derive from [waku-agent](https://github.com/ShenSeanChen/waku-agent)
+(MIT, Sean Chen) and from CyClaw / CG-agent-harness / CyClaw-Net-Viewer by the same copyright holder as
+this repository; the attribution in `LICENSE` stays with any redistribution.

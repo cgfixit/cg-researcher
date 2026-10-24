@@ -2,7 +2,7 @@
 # Secret references (never inline values):
 #   env:NAME            environment variable
 #   op://vault/item/f   1Password CLI (`op read`)
-#   keychain:svc/acct   macOS Keychain (`security find-generic-password`)
+#   keychain:svc/acct   macOS Keychain (Security.framework, no `security` CLI)
 #   file:name           ~/.cg-researcher/secrets/name (0600)
 # Unknown keys are rejected; quoted booleans ("true") are rejected.
 

@@ -28,12 +28,12 @@ Only what `CLAUDE.md` and `INVARIANTS.md` do not already say: the "looks green f
 - **Right fix:** Stop Ollama (or LM Studio on 1234) before running the mock; `reuseExistingServer` is deliberately `false` in `e2e/playwright.config.mjs`, so an existing listener is an error, not a convenience. Same for `serve` on 8797: a `/health` that answers before you started anything is someone else's process, possibly the launchd agent.
 - **Evidence:** `e2e/playwright.config.mjs`, `e2e/start-server.sh`, `crates/cg-researcher/examples/mock_llm.rs`.
 
-## 4. GitHub Actions on this account has not run the macOS matrix
+## 4. A check that fails in two seconds with `runner_id: 0` did not run
 
-- **Symptom:** Every check on a PR fails within the same two seconds of being created, the job shows `runner_id: 0`, and the log download returns 404. Nothing ran; this is the account-level Actions block (billing), not thirteen simultaneous real failures.
-- **Wrong fix:** Assume green, start "fixing" the red checks, or claim the installer and Keychain code are CI-verified.
-- **Right fix:** Say so in the PR body and in any status text. Anything in `install.sh`, `keychain.rs`, the launchd plists, `bundle-app.sh` or `packaging/` is unverified until a Mac or the macOS runner runs it. Linux verification does not transfer.
-- **Evidence:** README "Status"; `CLAUDE.md` installer note.
+- **Symptom:** Every check on a PR fails within the same two seconds of being created, the job shows `runner_id: 0`, and the log download returns 404. Nothing ran; that is an account-level Actions block (billing or a disabled workflow), not thirteen simultaneous real failures. This happened to this account once; the macOS matrix has run green on `main` since (see the ci.yml run list).
+- **Wrong fix:** Assume green, start "fixing" the red checks, or claim the installer and Keychain code are CI-verified from the YAML alone.
+- **Right fix:** Read the run, not the badge. Anything in `install.sh`, `keychain.rs`, the launchd plists, `bundle-app.sh` or `packaging/` is unverified until a Mac or the macOS runner has actually executed it on your commit. Linux verification does not transfer, and `install-smoke` runs on push and schedule only, never on a PR.
+- **Evidence:** README "Status"; `CLAUDE.md` installer note; `ci.yml` `install-smoke` `if:`.
 
 ## 5. `macos-latest` is not macOS 27
 
@@ -81,11 +81,11 @@ Only what `CLAUDE.md` and `INVARIANTS.md` do not already say: the "looks green f
 - **Right fix:** Read the `skip:` lines. A skipped linter is unverified, not passed. `brew install shellcheck actionlint zizmor` on a Mac; the sandbox has none of them.
 - **Evidence:** `need()` in `scripts/lint.sh`; `.github/workflows/lint.yml` installs sha256-verified arm64 binaries.
 
-## 10. The test count is 131 plus one ignored
+## 10. Test counts go stale the moment they are written down
 
-- **Symptom:** Docs say 132 tests ran on Linux; the Keychain test is `#[ignore]` off macOS and is only counted when run with `-- --ignored` on a Mac.
-- **Right fix:** Quote the numbers from `cargo test --workspace --locked` output (`passed`, `ignored`), not from memory. The Playwright suite is six specs in two browsers, so "12" is a run count, not a spec count.
-- **Evidence:** `cargo test` summary lines; `e2e/ui.spec.mjs`.
+- **Symptom:** A doc quotes a test count that no longer matches; the Keychain test is `#[ignore]` off macOS and is only counted when run with `-- --ignored` on a Mac, and two more tests are `cfg`-gated.
+- **Right fix:** Quote the numbers from the `cargo test --workspace --locked` output (`passed`, `ignored`) of the run you are describing, and name the commit; never carry a number forward. The Playwright suite is nine specs (`e2e/ui.spec.mjs` six, `e2e/stream.spec.mjs` three) in two browsers, so "18" is a run count, not a spec count.
+- **Evidence:** `cargo test` summary lines; `grep -c '^test(' e2e/*.spec.mjs`.
 
 ## 11. Branch names and the default branch
 

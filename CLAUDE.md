@@ -33,7 +33,7 @@ cargo llvm-cov --workspace --locked --summary-only --fail-under-lines 70   # CI 
 
 Lint first, then run the real binary. Reach for the test suite last.
 
-1. **Lint, always**: `scripts/lint.sh` (add `--fast` to skip clippy while iterating). It is written for macOS (bash 3.2, BSD userland) and is what CI's `lint` job runs on an Apple Silicon runner, so a clean local run predicts a clean CI run. It covers repo hygiene (below), `cargo fmt`, `clippy -D warnings`, `shellcheck`, `actionlint`, `zizmor` when installed, and `plutil` on macOS. Install the linters once with `brew install shellcheck actionlint zizmor`. Any change under `.github/` or to a shell script gets `actionlint` and `shellcheck` before it is committed, not after CI fails.
+1. **Lint, always**: `scripts/lint.sh` (add `--fast` to skip clippy while iterating). It is written for macOS (bash 3.2, BSD userland) and is what CI's `lint` job runs on an Apple Silicon runner, so a clean local run predicts a clean CI run. It covers repo hygiene (below), `cargo fmt`, `clippy -D warnings`, `cargo deny` when installed, `shellcheck`, `actionlint`, `zizmor` when installed, and `plutil` on macOS. Install the linters once with `brew install shellcheck actionlint zizmor`. Any change under `.github/` or to a shell script gets `actionlint` and `shellcheck` before it is committed, not after CI fails.
 2. **Run the code instead of the test suite** while developing: build and exercise the binary against a throwaway home, and watch what it actually does.
    ```bash
    H="$(mktemp -d)"
@@ -48,7 +48,7 @@ Lint first, then run the real binary. Reach for the test suite last.
 
 ## Repo hygiene (privacy)
 
-Nothing from a data directory ever enters git. `scripts/lint.sh --hygiene` enforces this and CI runs it on every push; `.gitignore` carries the patterns.
+Nothing from a data directory ever enters git. `scripts/lint.sh --hygiene` enforces this and CI runs it on every PR and every push to `main`; `.gitignore` carries the patterns.
 
 - Never track: a `--home` or `~/.cg-researcher` / `.cg-agent` tree or its parts (`secrets/`, `logs/`, `state/`, `corpus/`, `index/`, `ui-settings.toml`, `*.pb`, `*.sqlite3`), any log file, key material or encrypted blobs (`*.key`, `*.enc`, `*.pem`, `*.p12`, `*.gpg`, `*.keychain-db`, `*.mobileprovision`), `.env*` except `.env.example`, `.DS_Store`, `node_modules`, Playwright reports, fuzz corpora, model weights (`*.gguf`, `*.safetensors`), profiling output (`*.profraw`, `*.trace/`, `*.dSYM/`), `.claude/settings.local.json`, `.claude/worktrees/`, `CLAUDE.local.md`.
 - When experimenting, pass `--home "$(mktemp -d)"` or set `CG_HOME` outside the repo. Do not create a data dir inside the checkout.
@@ -60,7 +60,7 @@ Lints: `unsafe_code = "forbid"` workspace-wide; `clippy::unwrap_used` warns, `db
 
 `scripts/install.sh` needs Xcode CLT and a native arm64 rustup (it rejects Rosetta shells and Rust older than 1.90). Nothing in this sandbox can run it, so changes to it, Keychain code or the launchd plists are unverified until a Mac or the macOS CI runs them.
 
-Repo skills in `.claude/skills/` (index in `.claude/skills/README.md`): `verify` (local gate, lint first), `invariants-check` (diff vs `INVARIANTS.md`), `config-guard` (shipped `config/cg.toml` still fail-closed), `run-cg-researcher` (real binary against the mock model in a throwaway home), `optimizer` (measure-first perf and size work that must not weaken an invariant), `gotchas` (session-tested traps; load before install, CI, release or dependency work). `.claude/settings.json` pre-approves the `cargo` gate commands, the repo scripts and `git status`/`diff`/`log`; `cargo run` and `rg` prompt (use the Grep tool, and pass a throwaway `--home` to every run); anything else prompts, so do not work around a prompt. Never comment `@codex review` on a PR without the operator's approval.
+Repo skills in `.claude/skills/` (index in `.claude/skills/README.md`): `verify` (local gate, lint first), `invariants-check` (diff vs `INVARIANTS.md`), `config-guard` (shipped `config/cg.toml` still fail-closed), `run-cg-researcher` (real binary against the mock model in a throwaway home), `optimizer` (measure-first perf and size work that must not weaken an invariant), `gotchas` (session-tested traps; load before install, CI, release or dependency work). `.claude/settings.json` pre-approves the `cargo` gate commands, `init.sh`, `scripts/lint.sh` and `git status`/`diff`/`log`; `cargo run` and `rg` prompt (use the Grep tool, and pass a throwaway `--home` to every run); anything else prompts, so do not work around a prompt. Never comment `@codex review` on a PR without the operator's approval.
 
 ## Architecture
 

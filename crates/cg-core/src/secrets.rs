@@ -2,7 +2,7 @@
 //!
 //! * `env:NAME`                      — process environment
 //! * `op://vault/item/field`         — 1Password CLI (`op read`)
-//! * `keychain:service/account`      — macOS Keychain (`/usr/bin/security`)
+//! * `keychain:service/account`      — macOS Keychain (Security.framework API)
 //! * `file:relative/path`            — owner-only file under `<home>/secrets`
 //!
 //! Every resolved value is registered with the global [`redactor`] so it is

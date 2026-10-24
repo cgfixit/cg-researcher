@@ -90,6 +90,7 @@ refuse to start; SMS also needs the PIN from `secrets/sms_pin`.
 | symptom | fix |
 |---|---|
 | "cannot reach 127.0.0.1:8797" | start `cg-researcher serve`, or install with `--service` |
+| "pairing challenge refused" / "local server identity check failed" | the listener on 8797 is an older `serve` (pre-handshake) or not this app: restart the server after upgrading, or check what owns the port |
 | Keychain "Always Allow" prompt after upgrading | expected: ad-hoc signatures change per build |
 | "app is damaged / can't be opened" | Gatekeeper quarantine on an unnotarized download: right-click → Open, or `xattr -dr com.apple.quarantine cg-researcher.app` after checking the SHA-256 |
 | answers ignore your notes | `cg-researcher index`; if you changed `embed_model`, the log says the vector size changed, so reindex |
