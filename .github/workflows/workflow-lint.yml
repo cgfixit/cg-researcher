@@ -1,7 +1,7 @@
 name: workflow-lint
 on:
   push:
-    branches: ["cg/main"]
+    branches: ["main"]
     paths: [".github/**", "scripts/**", "e2e/*.sh", "*.sh", "*.command"]
   pull_request:
   # Weekly: new actionlint/zizmor audits can flag unchanged workflows.

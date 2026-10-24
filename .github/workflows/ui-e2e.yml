@@ -6,7 +6,7 @@ name: ui-e2e
 # OS-independent and a macOS minute costs ~10x.
 on:
   push:
-    branches: ["cg/main"]
+    branches: ["main"]
     paths: ["crates/**", "e2e/**", "Cargo.lock", ".github/workflows/ui-e2e.yml"]
   pull_request:
     paths: ["crates/**", "e2e/**", "Cargo.lock", ".github/workflows/ui-e2e.yml"]

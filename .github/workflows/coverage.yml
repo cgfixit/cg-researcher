@@ -6,7 +6,7 @@ name: coverage
 # is an artifact. No third-party upload service.
 on:
   push:
-    branches: ["cg/main"]
+    branches: ["main"]
     paths-ignore: ["**.md", "LICENSE"]
   pull_request:
     paths-ignore: ["**.md", "LICENSE"]
