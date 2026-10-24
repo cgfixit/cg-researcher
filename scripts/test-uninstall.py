@@ -58,19 +58,23 @@ with tempfile.TemporaryDirectory(prefix="cg-uninstall-check-") as tmp:
     assert not failures, failures
     selected = home / "researcher"
     selected.mkdir()
-    log.unlink(missing_ok=True)
-    r = subprocess.run(
-        ["/bin/bash", str(script), "--purge", "--yes"],
-        env=dict(env, CG_HOME=str(selected)),
-        capture_output=True,
-        text=True,
-    )
-    assert r.returncode == 0, r.stderr
-    assert "rm -rf -- " + str(selected.resolve()) in log.read_text()
-    assert (home / "keep.txt").read_text() == "unrelated user data"
+    for path in [str(selected), "researcher"]:
+        log.unlink(missing_ok=True)
+        r = subprocess.run(
+            ["/bin/bash", str(script), "--purge", "--yes"],
+            cwd=home,
+            env=dict(env, CG_HOME=path, CDPATH=str(home)),
+            capture_output=True,
+            text=True,
+        )
+        assert r.returncode == 0, r.stderr
+        assert "rm -rf -- " + str(selected.resolve()) in log.read_text(), r.stdout
+        assert "rm -f " + str(selected.resolve() / "bin/cg-researcher") in log.read_text()
+        assert (home / "keep.txt").read_text() == "unrelated user data"
     print(
         "PASS: six unsafe aliases rejected before side effects; unrelated data preserved"
     )
+    print("PASS: absolute and relative homes ignore exported CDPATH")
 
 # Rendering a service for a relative home must retain the installer's directory.
 import plistlib

@@ -17,8 +17,8 @@ CG_HOME="${CG_HOME:-$HOME/.cg-researcher}"
 [[ "$(uname -s)" == "Darwin" ]] || { echo "cg-researcher's uninstaller targets macOS" >&2; exit 1; }
 # Resolve aliases before removing even the binaries or launchd jobs.
 if [[ -d "$CG_HOME" ]]; then
-  CG_HOME="$(cd -P -- "$CG_HOME" && pwd -P)"
-  user_home="$(cd -P -- "$HOME" && pwd -P)"
+  CG_HOME="$(CDPATH='' cd -P -- "$CG_HOME" && pwd -P)"
+  user_home="$(CDPATH='' cd -P -- "$HOME" && pwd -P)"
   case "$CG_HOME" in /) echo "refusing to uninstall from /" >&2; exit 1 ;; esac
   case "$user_home/" in
     "$CG_HOME/"*) echo "refusing to uninstall from home or its ancestor: $CG_HOME" >&2; exit 1 ;;
