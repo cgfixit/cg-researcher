@@ -29,6 +29,9 @@ pub const SCHEMA_VERSION: &str = "2";
 /// Largest embedding we accept (matches common model ceilings, bounds RAM).
 pub const MAX_DIMENSIONS: usize = 8192;
 const CANDIDATES: usize = 50;
+/// The FTS5 table, shared by `prepare` and the drop-and-recreate in `write_all`.
+const CREATE_FTS: &str = "CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts
+           USING fts5(text, tokenize = 'unicode61 remove_diacritics 2');";
 
 #[derive(Debug, Clone)]
 pub struct Chunk {
@@ -190,10 +193,9 @@ fn prepare(c: &Connection) -> rusqlite::Result<()> {
         "CREATE TABLE IF NOT EXISTS chunks(
            id INTEGER PRIMARY KEY, source TEXT NOT NULL, ord INTEGER NOT NULL,
            text TEXT NOT NULL, embedding BLOB);
-         CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts
-           USING fts5(text, tokenize = 'unicode61 remove_diacritics 2');
          CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT NOT NULL);",
     )?;
+    c.execute_batch(CREATE_FTS)?;
     c.execute(
         "INSERT OR IGNORE INTO meta(k, v) VALUES ('schema', ?1)",
         [SCHEMA_VERSION],
@@ -215,7 +217,10 @@ fn write_all(
         .map(|v| v.len())
         .next();
     let tx = c.transaction()?;
-    tx.execute_batch("DELETE FROM chunks; DELETE FROM chunks_fts;")?;
+    // Drop and recreate the FTS table: `DELETE FROM` on FTS5 re-tokenizes every
+    // old row to write delete markers, then merges them into the new segments.
+    tx.execute_batch("DELETE FROM chunks; DROP TABLE IF EXISTS chunks_fts;")?;
+    tx.execute_batch(CREATE_FTS)?;
     let mut stored = 0;
     {
         let mut ins = tx.prepare(
@@ -491,8 +496,13 @@ impl Retriever {
         c.query_row("SELECT count(*) FROM chunks", [], |r| r.get::<_, i64>(0))
             .map_or(0, |n| usize::try_from(n).unwrap_or(0))
     }
+    /// `EXISTS` stops at the first row; `count(*)` scans the whole table.
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        let c = self.conn.lock().unwrap_or_else(|p| p.into_inner());
+        !c.query_row("SELECT EXISTS(SELECT 1 FROM chunks)", [], |r| {
+            r.get::<_, bool>(0)
+        })
+        .unwrap_or(false)
     }
 
     /// Current vector matrix, reloaded if another writer bumped `generation`.
