@@ -1,15 +1,10 @@
 # cg-researcher
 
-```
-retrieve → guardrail_input ─┬─ route_by_score ─┬─ local_llm ⇄ tool_gate → tool_exec
-                            │                  └─ user_gate ─┬─ local_llm
-                            │                                ├─ external_fallback (Claude / Grok, 3 gates, no tools)
-                            │                                └─ (pause: ask the human)
-                            └──────────────── guardrail_output → audit_logger → END
-```
-
-Every path starts at `retrieve` and ends at `audit_logger`. The graph is the policy
-(`cg-graph` is a small LangGraph-style `StateGraph`; there is no maintained Rust LangGraph).
+A local-first research assistant: RAG over your own notes, a loopback model
+(Ollama / LM Studio / llama.cpp / vLLM), and an optional, triple-gated external
+model. Every turn starts at `retrieve` and ends at `audit_logger`. The graph is
+the policy (`cg-graph` is a small LangGraph-style `StateGraph`; there is no
+maintained Rust LangGraph).
 
 Docs: [user guide](docs/user-guide.md) · [features](docs/feature.md) · [security](SECURITY.md) ·
 [invariants](INVARIANTS.md). Formerly `cg-agent`; see the user
@@ -67,6 +62,59 @@ curl -s 127.0.0.1:8797/query -H "authorization: Bearer $(cat ~/.cg-researcher/se
   -H 'content-type: application/json' -d '{"query":"what is in my notes about X?"}'
 ```
 
+## Graph and gates
+
+```
+retrieve → guardrail_input ─┬─ route_by_score ─┬─ local_llm ⇄ tool_gate → tool_exec
+                            │                  └─ user_gate ─┬─ local_llm
+                            │                                ├─ external_fallback (Claude / Grok, 3 gates, no tools)
+                            │                                └─ (pause: ask the human)
+                            └──────────────── guardrail_output → audit_logger → END
+```
+
+Ten nodes, four routers, one entry (`retrieve`), one sink (`audit_logger`). Two of the
+nodes are gates, and they answer different questions.
+
+### `user_gate` — may this turn leave the machine?
+
+Reached only when `route_by_score` finds no confident local match (or the operator sent
+`/ext` / `prefer_external`). It is gate 3 of 3 for the external model; gates 1 and 2
+(`app.mode = "hybrid"` and `external.enabled`) decide whether an external client is even
+constructed, and `Agent::new` is the only construction site.
+
+| external client | origin may consent | `confirm_online` | result |
+|---|---|---|---|
+| none (gates 1+2 closed) | — | — | `local_llm` |
+| built | **no** (SMS always; Telegram unless `allow_telegram`) | — | `local_llm` |
+| built | yes | `true` (or `prefer_external`) | `external_fallback` |
+| built | yes | `false` | `local_llm` |
+| built | yes | unset | **pause** → `audit_logger` |
+
+The pause is not a blocked thread. The graph ends with `needs_confirm = true` and the
+client re-sends the same query with `confirm_online` set; nothing is checkpointed and no
+model is called in between. External models never receive tools, and their output marks
+the turn **tainted**.
+
+### `tool_gate` — may each requested tool call run?
+
+Reached whenever `local_llm` returns tool calls. It is inside the bounded
+`local_llm ⇄ tool_gate → tool_exec` cycle (`max_tool_iterations`). For every call:
+
+1. Arguments must parse as a JSON object, else `denied`.
+2. The tool must be in the list **offered for this origin** (remote origins get read-only,
+   `remote_ok` tools), else `denied`. Offering is done by topology, not by prompt.
+3. `Effect::Read` → `allowed`.
+4. `Effect::Write` → `allowed` only if `tools.auto_approve_writes` **and** the turn is not
+   tainted **and** the origin is local. Otherwise the `Confirmer` is asked with a
+   human-readable summary (suffixed `[turn contains untrusted content]` when tainted) and
+   the call becomes `confirmed` or `declined`. Remote channels cannot confirm.
+
+Denied and declined calls are not dropped: `tool_exec` returns `DENIED: <reason>` to the
+model as the tool result, so the model can explain instead of hallucinating success. Tool
+output from `untrusted_output` connectors is sanitized, wrapped in `<untrusted>`, and
+taints the turn, which removes auto-approval from any later write in the same turn.
+Every decision is written to the audit chain with the args stored as HMAC fingerprints.
+
 ## External models (Anthropic Claude, xAI Grok)
 
 Off by default. Three gates, all required (I3): `app.mode = "hybrid"`, `external.enabled = true`,
@@ -94,7 +142,7 @@ and consent on **each** query (CLI `y`, the UI's "External" button, `/ext <quest
 single use). It then opens the browser on a URL whose `#fragment` carries the code: browsers never send
 fragments to servers, and the page wipes it from history. The page swaps the code for a 12-hour
 session token kept in `sessionStorage`. Tabs: Chat (local / auto / external), Models (switch +
-autotune), Rules, Keys, Status (flow-ordered graph, budgets, audit verify, "Reindex corpus"). The UI is compiled into the binary and
+autotune), Rules, Keys, Status (graph, budgets, audit verify). The UI is compiled into the binary and
 has no CDN or remote assets. It runs under a strict CSP (`default-src 'none'`, no inline script). The
 server answers only `Host: 127.0.0.1|localhost|[::1]` (DNS-rebinding guard) and refuses
 cross-origin requests. Settings changes are limited to a whitelist (model, rules, provider, keys).
