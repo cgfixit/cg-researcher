@@ -53,6 +53,10 @@ anthropic_key_ref = "keychain:cg-researcher/anthropic_api_key"
 xai_key_ref = "keychain:cg-researcher/xai_api_key"
 xai_region = "global"     # global (api.x.ai) | us (us.api.x.ai)
 timeout_secs = 120
+# TLS 1.3 only. mozilla = compiled-in Mozilla roots: a locally installed root CA
+# (MDM, corporate TLS inspection) cannot read your key or prompts. Set "system"
+# only if your network must inspect this traffic. Not settable from the UI.
+tls_roots = "mozilla"     # mozilla | system
 
 [external.rules]          # all ship closed; loosening via the UI is audited
 send_local_context = false

@@ -149,6 +149,9 @@ pub struct ExternalConfig {
     /// `global` (api.x.ai) or `us` (us.api.x.ai).
     pub xai_region: String,
     pub timeout_secs: u64,
+    /// `mozilla` (default: compiled-in Mozilla roots, local roots ignored) or
+    /// `system` (OS trust store). cg.toml only; the UI overlay cannot set it.
+    pub tls_roots: crate::egress::TlsRoots,
     pub rules: ExternalRules,
 }
 impl Default for ExternalConfig {
@@ -161,6 +164,7 @@ impl Default for ExternalConfig {
             xai_key_ref: "keychain:cg-researcher/xai_api_key".into(),
             xai_region: "global".into(),
             timeout_secs: 120,
+            tls_roots: crate::egress::TlsRoots::Mozilla,
             rules: ExternalRules::default(),
         }
     }

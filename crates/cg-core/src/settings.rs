@@ -204,6 +204,7 @@ mod tests {
             "[tools]\nauto_approve_writes = true\n",
             "[connectors.telegram]\nenabled = true\n",
             "[external]\nanthropic_key_ref = \"env:HOME\"\n",
+            "[external]\ntls_roots = \"system\"\n",
             "[external.rules]\nsend_local_contxt = true\n",
         ] {
             assert!(cfg_with(bad).is_err(), "{bad}");

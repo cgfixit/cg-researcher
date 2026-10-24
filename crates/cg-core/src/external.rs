@@ -122,6 +122,32 @@ pub fn validate_key(p: Provider, key: &str) -> Result<(), &'static str> {
     Ok(())
 }
 
+/// The full cause chain of a send error. reqwest's `Display` stops at "error sending
+/// request", which hides a refused certificate; say why, and how to opt out.
+fn describe_send_error(e: &reqwest::Error) -> String {
+    let mut s = e.to_string();
+    let mut src = std::error::Error::source(e);
+    while let Some(x) = src {
+        s.push_str(": ");
+        s.push_str(&x.to_string());
+        src = x.source();
+    }
+    if let Some(h) = tls_hint(&s) {
+        s.push_str(" (");
+        s.push_str(h);
+        s.push(')');
+    }
+    s
+}
+
+fn tls_hint(chain: &str) -> Option<&'static str> {
+    chain.contains("UnknownIssuer").then_some(
+        "certificate is not from a Mozilla-program root; a TLS-inspecting proxy or a \
+         locally installed CA would cause this. Your key was not sent. Only if that \
+         interception is expected, set external.tls_roots = \"system\" in cg.toml",
+    )
+}
+
 pub struct ExternalReply {
     pub text: String,
     pub model: String,
@@ -142,6 +168,7 @@ impl ExternalClient {
         provider: Provider,
         xai_us_region: bool,
         timeout: Duration,
+        tls_roots: crate::egress::TlsRoots,
         key: Secret,
         test_base: Option<&str>,
     ) -> anyhow::Result<Self> {
@@ -163,7 +190,7 @@ impl ExternalClient {
         Ok(Self {
             provider,
             base: format!("https://{host}/v1"),
-            egress: Egress::new("llm-external", &[host], false, timeout)?,
+            egress: Egress::new_tls13("llm-external", &[host], timeout, tls_roots)?,
             key,
         })
     }
@@ -192,7 +219,7 @@ impl ExternalClient {
             .authed(rb)
             .send()
             .await
-            .map_err(|e| LlmError::Http(crate::sanitizer::redact(&e.to_string())))?;
+            .map_err(|e| LlmError::Http(crate::sanitizer::redact(&describe_send_error(&e))))?;
         let status = resp.status();
         let v: Value = resp.json().await.map_err(|_| LlmError::Shape)?;
         if !status.is_success() {
@@ -609,6 +636,14 @@ mod tests {
     }
 
     #[test]
+    fn unknown_issuer_names_the_cause_and_the_opt_out() {
+        let h = tls_hint("error sending request: client error (Connect): invalid peer certificate: UnknownIssuer")
+            .expect("hint");
+        assert!(h.contains("external.tls_roots") && h.contains("not sent"));
+        assert!(tls_hint("error sending request: connection refused").is_none());
+    }
+
+    #[test]
     fn test_base_must_be_loopback() {
         let k = Secret::minted("sk-ant-test-000000000000".into());
         assert!(
@@ -616,14 +651,21 @@ mod tests {
                 Provider::Anthropic,
                 false,
                 Duration::from_secs(1),
+                crate::egress::TlsRoots::Mozilla,
                 k.clone(),
                 Some("https://evil.example/v1")
             )
             .is_err()
         );
-        let c =
-            ExternalClient::external_provider(Provider::Xai, true, Duration::from_secs(1), k, None)
-                .expect("ok");
+        let c = ExternalClient::external_provider(
+            Provider::Xai,
+            true,
+            Duration::from_secs(1),
+            crate::egress::TlsRoots::System,
+            k,
+            None,
+        )
+        .expect("ok");
         assert_eq!(c.host(), "us.api.x.ai");
     }
 }
