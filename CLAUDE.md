@@ -25,7 +25,7 @@ cargo llvm-cov --workspace --locked --summary-only --fail-under-lines 70   # CI 
 ```
 
 - The data dir is `$CG_HOME` or `~/.cg-researcher`; override per invocation with `--home <dir>` (use a throwaway dir when experimenting).
-- Fuzzing (`fuzz/`, nightly + `cargo-fuzz`): targets `attachments` and `sanitizer`.
+- Fuzzing (`fuzz/`, nightly + `cargo-fuzz`): targets `attachments`, `sanitizer` and `stream` (SSE parser + streaming output guard; `fuzz/stream.dict`).
 - Browser e2e (`e2e/`, Playwright Chromium + WebKit): needs the mock model (`cargo run -p cg-researcher --example mock_llm`, listens on 127.0.0.1:11434), then `cd e2e && npm ci --ignore-scripts && npx playwright test`. `e2e/start-server.sh` builds a throwaway home and runs `serve --no-gateways`.
 - Shell scripts are shellchecked in CI (`scripts/*.sh e2e/*.sh *.command init.sh`).
 
@@ -91,3 +91,23 @@ Two gates matter most:
 - Model URL and HTTP bind must be loopback (`Config::validate`); all connector HTTP goes through `Egress` (host-pinned, HTTPS-only, no redirects, no proxy).
 
 Config: defaults in `config/cg.toml`; UI overrides layer on top via `~/.cg-researcher/ui-settings.toml`. Docs: `docs/user-guide.md`, `docs/feature.md`, `SECURITY.md`.
+
+## Agent mistakes: rule → enforcer
+
+Kept by the `correct` pass. Each rule pairs with what fails when it is broken. When an operator corrects a repeat, fix it here at the highest level (architecture > types/lint/CI > tests > docs) in the same change; drop a row once the mistake cannot happen.
+
+| Rule | Enforcer | Past mistake it catches |
+|---|---|---|
+| Docs name only CLI commands that exist; add to `Cmd` before documenting | `docs_cli` test in `crates/cg-researcher/src/docs_cli.rs` (clap `Cli::command()` is the source of truth; runs in `cargo test`) | #17: the user guide named a nonexistent "config set" command |
+| Dependency/manifest changes pass `deny.toml` before push | `scripts/lint.sh` "cargo deny" section (when cargo-deny is installed) + `audit.yml` | #13 version-less path deps vs `wildcards = "deny"` |
+| `.gitignore` patterns and the lint hygiene regex agree (root-anchored data dirs) | `scripts/lint.sh --hygiene` sentinels; anchoring fix in #14 | #15, b8322f3 |
+| Never merge with a required check red | Human: branch protection on `main` (not enforceable from the repo) | #13 merged with `cargo-deny` failing |
+
+## pstack / poteto-mode
+
+Agents using pstack follow poteto-mode conventions (concise answers, prove-it-works
+verification, subtract before adding). Per-role model choices live in
+`.cursor/rules/pstack-models.mdc` (always applied, budget `large (xhigh)`); every
+role is `inherit-parent` until real model slugs are confirmed, so roles run on the
+parent chat model. Re-run the `setup-pstack` skill to change them. This section does
+not alter INVARIANTS.md, SECURITY.md, or `.claude/settings.json` permissions.

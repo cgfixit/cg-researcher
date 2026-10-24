@@ -13,8 +13,8 @@ home = ""                 # empty = ~/.cg-researcher (or $CG_HOME)
 [llm]
 provider = "ollama"       # label only: ollama | lmstudio | llamacpp | mlx | vllm | openai-compatible
 base_url = "http://127.0.0.1:11434/v1"   # LM Studio :1234/v1, llama-server :8080/v1, mlx_lm.server :8080/v1
-model = "qwen3:8b"
-vision_model = ""         # e.g. "qwen2.5vl:7b"; empty = PNG attachments are not sent to the model
+model = "qwen3.8:27b-mlx-cg"
+vision_model = "gemma4-26b-a4b:ud-q4_k_xl-cg"   # VLM for PNG attachments; empty = PNG attachments are not sent to the model
 embed_model = "all-minilm"
 api_key_ref = ""          # only if your local server wants a bearer key
 timeout_secs = 720
