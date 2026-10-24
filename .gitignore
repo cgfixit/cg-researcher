@@ -91,7 +91,8 @@ id_ed25519*
 .DocumentRevisions-V100
 .VolumeIcon.icns
 .com.apple.timemachine.donotpresent
-Icon?
+# the macOS custom-icon file is literally "Icon\r"; git drops one trailing CR, hence two
+Icon
 
 # ---- editors / tooling ----
 .idea/
