@@ -18,7 +18,7 @@ guide for the one-time migration.
 #   --with-netviewer  (macOS) also builds CyClaw-Net-Viewer at a pinned commit
 #   --service         per-user launchd agent (com.cgfixit.cg-researcher)
 #   --maintenance     daily 03:15 launchd health check (com.cgfixit.cg-researcher.maintenance)
-ollama pull qwen3:8b && ollama pull all-minilm
+ollama pull qwen3.8:27b-mlx-cg && ollama pull gemma4-26b-a4b:ud-q4_k_xl-cg && ollama pull all-minilm
 cp ~/notes/*.md ~/.cg-researcher/corpus/ && cg-researcher index
 cg-researcher chat                   # /attach ./diagram.png   /attach ./spec.docx
 cg-researcher selftest
@@ -45,8 +45,9 @@ CLI tarball; build the app locally with `scripts/bundle-app.sh`.
 
 Any OpenAI-compatible server on loopback: Ollama (`:11434/v1`), LM Studio (`:1234/v1`),
 llama.cpp `llama-server` / `mlx_lm.server` (`:8080/v1`), vLLM. Non-loopback model URLs are
-refused unless `llm.allow_non_loopback = true`. Set `llm.vision_model` to a VLM (for example
-`qwen2.5vl:7b`) to let PNG attachments reach a model. Without it, PNGs are validated and
+refused unless `llm.allow_non_loopback = true`. Defaults: `llm.model = "qwen3.8:27b-mlx-cg"` (text generation) and `llm.vision_model = "gemma4-26b-a4b:ud-q4_k_xl-cg"`
+(multimodal, for PNG attachments). Set `llm.vision_model` to any VLM (for example
+`qwen2.5vl:7b`) to let PNG attachments reach a model. Set it to `""` and PNGs are validated and
 stripped, then not sent.
 
 ## Commands
