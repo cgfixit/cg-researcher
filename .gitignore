@@ -1,6 +1,93 @@
+# ---- build output ----
 /target
+/dist
+**/*.rs.bk
+lcov.info
+summary.txt
+cargo-timing*.html
+
+# ---- runtime data: never commit a data directory, from ~/.cg-researcher or a --home ----
+.cg-researcher/
+.cg-agent/
+cg-home*/
+cgh/
+secrets/
+/state/
+/corpus/
+/index/
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+*.db
+# audit chain (keyed fingerprints, still private), its head and lock
 *.pb
+*.pb.head
+*.pb.lock
+sms_pin
+# a data dir rooted at the checkout (--home .) would drop its config here; the repo default is config/cg.toml
+/cg.toml
+# per-user UI overlay; the repo default is config/cg.toml
+ui-settings.toml
+
+# ---- logs ----
+*.log
+logs/
+npm-debug.log*
+
+# ---- key material, encrypted blobs, credentials ----
 *.key
+*.enc
+*.pem
+*.p12
+*.pfx
+*.der
+*.jks
+*.keystore
+*.gpg
+*.pgp
+*.mobileprovision
+*.provisionprofile
+*.keychain
+*.keychain-db
+*.token
+*.secret
+secrets.json
+secrets.toml
+secrets.yaml
+secrets.yml
+secrets.env
+id_rsa*
+id_ed25519*
+.netrc
 .env
 .env.*
-/dist
+!.env.example
+
+# ---- macOS ----
+.DS_Store
+._*
+.AppleDouble
+.LSOverride
+.Spotlight-V100
+.Trashes
+Icon?
+
+# ---- editors / tooling ----
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.claude/settings.local.json
+.direnv/
+.envrc
+
+# ---- node (e2e) and fuzz also carry their own .gitignore ----
+node_modules/
+playwright-report/
+test-results/
+
+# ---- patch / merge debris ----
+*.orig
+*.rej
