@@ -25,7 +25,7 @@ cargo llvm-cov --workspace --locked --summary-only --fail-under-lines 70   # CI 
 ```
 
 - The data dir is `$CG_HOME` or `~/.cg-researcher`; override per invocation with `--home <dir>` (use a throwaway dir when experimenting).
-- Fuzzing (`fuzz/`, nightly + `cargo-fuzz`): targets `attachments` and `sanitizer`.
+- Fuzzing (`fuzz/`, nightly + `cargo-fuzz`): targets `attachments`, `sanitizer` and `stream` (SSE parser + streaming output guard; `fuzz/stream.dict`).
 - Browser e2e (`e2e/`, Playwright Chromium + WebKit): needs the mock model (`cargo run -p cg-researcher --example mock_llm`, listens on 127.0.0.1:11434), then `cd e2e && npm ci --ignore-scripts && npx playwright test`. `e2e/start-server.sh` builds a throwaway home and runs `serve --no-gateways`.
 - Shell scripts are shellchecked in CI (`scripts/*.sh e2e/*.sh *.command init.sh`).
 
