@@ -174,7 +174,8 @@ The UI cannot change bind address, loopback rules, connectors or write approval.
 | cargo-audit + cargo-deny | Mon 06:17 UTC | `.github/workflows/audit.yml` |
 | fuzz attachments + sanitizer (15 min each) | Tue 04:47 UTC | `.github/workflows/fuzz.yml` |
 
-On every PR: browser end-to-end tests of the web UI in Chromium and WebKit (`ui-e2e.yml`, against a
+On every push and PR: `scripts/lint.sh` on an Apple Silicon runner (`lint.yml`: hygiene, fmt, clippy,
+shellcheck, actionlint, plutil). On every PR: browser end-to-end tests of the web UI in Chromium and WebKit (`ui-e2e.yml`, against a
 real `serve` and a Rust mock model), line coverage with a 70% floor (`coverage.yml`), and a 2-minute
 fuzz run when attachment, sanitizer or secret code changes. Locally:
 `cargo build -p cg-researcher --bins --examples && (cd e2e && npm ci && npx playwright install --only-shell chromium webkit && npx playwright test)`
@@ -222,7 +223,7 @@ crates/cg-connectors  everything that talks to a third party
 crates/cg-researcher  the binary (clap, axum, embedded UI from crates/cg-researcher/ui)
 config/cg.toml        shipped defaults, copied by `init`; every gate closed
 packaging/macos       Info.plist for the .app bundle
-scripts/              install.sh, uninstall.sh, bundle-app.sh
+scripts/              lint.sh (the lint gate), install.sh, uninstall.sh, bundle-app.sh
 e2e/                  Playwright specs (Chromium + WebKit) against serve + the mock model
 fuzz/                 cargo-fuzz targets (attachments, sanitizer); own Cargo.lock, nightly only
 .claude/              Claude Code settings and repo skills (see Development)
@@ -250,15 +251,17 @@ lists each security rule with the test that fails if it breaks; a change to one 
 
 | skill | purpose |
 |---|---|
-| `verify` | the local gate: fmt, clippy `-D warnings`, shellcheck, `cargo deny`, then `init` / `selftest` / `audit verify` in a throwaway home |
+| `verify` | the local gate: `scripts/lint.sh` (hygiene, fmt, clippy `-D warnings`, shellcheck, actionlint, plutil), `cargo deny`, then `init` / `selftest` / `audit verify` in a throwaway home |
 | `invariants-check` | maps a diff to I1-I8 and the tests that cover each |
 | `config-guard` | asserts `config/cg.toml` still ships fail-closed (offline, external off, connectors off, loopback, quoted booleans refused, UI overlay whitelist) |
 | `run-cg-researcher` | runs the real binary against the mock model: throwaway home, index, `serve`, `/query`, UI pairing, Playwright, audit verify |
 | `optimizer` | measure-first performance and size work that must not weaken a guard |
 | `gotchas` | session-tested traps: Rosetta shells, Homebrew rust, port 11434 vs Ollama, unrun macOS CI, `macos-latest` vs 27, lock and deny handling |
 
-Lint first, then run the code; the full suite is CI's job. The lints are strict: `unsafe_code = "forbid"`,
-`clippy::unwrap_used` warns under `-D warnings`, `dbg_macro` denies.
+Lint first (`scripts/lint.sh`, the same script CI's `lint` job runs on an Apple Silicon runner; `--hygiene`
+alone checks that no data dir, log, key or encrypted blob is tracked), then run the code; the full suite is
+CI's job. The lints are strict: `unsafe_code = "forbid"`, `clippy::unwrap_used` warns under `-D warnings`,
+`dbg_macro` denies.
 
 ## Status
 
