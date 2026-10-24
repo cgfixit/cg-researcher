@@ -21,7 +21,7 @@ externally. cg-researcher enforces this in the graph, not in the prompt:
   HTTP always consults its denying confirmer, even if auto-approval is configured.
 - Remote origins (Telegram/SMS) get read-only tools and cannot approve writes. SMS can never
   approve the external model.
-- Writes (`gmail_send`, `gmail_create_draft`, `gcal_create_event`) always need a human "yes"
+- With the shipped settings, writes (`gmail_send`, `gmail_create_draft`, `gcal_create_event`) need a human "yes"
   that shows the full recipient, subject and body. The HTTP API cannot give that yes.
 - Model output is filtered: markdown images are removed and links with query strings are cut
   to their host, which closes the classic exfiltration channel.
