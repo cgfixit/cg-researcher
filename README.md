@@ -255,6 +255,7 @@ lists each security rule with the test that fails if it breaks; a change to one 
 | `config-guard` | asserts `config/cg.toml` still ships fail-closed (offline, external off, connectors off, loopback, quoted booleans refused, UI overlay whitelist) |
 | `run-cg-researcher` | runs the real binary against the mock model: throwaway home, index, `serve`, `/query`, UI pairing, Playwright, audit verify |
 | `optimizer` | measure-first performance and size work that must not weaken a guard |
+| `gotchas` | session-tested traps: Rosetta shells, Homebrew rust, port 11434 vs Ollama, unrun macOS CI, `macos-latest` vs 27, lock and deny handling |
 
 Lint first, then run the code; the full suite is CI's job. The lints are strict: `unsafe_code = "forbid"`,
 `clippy::unwrap_used` warns under `-D warnings`, `dbg_macro` denies.
