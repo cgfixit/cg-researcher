@@ -100,7 +100,8 @@ jobs:
           lipo -verify_arch dist/cg-researcher/cg-researcher arm64 x86_64
           codesign --force --sign - --options runtime --identifier com.cgfixit.cg-researcher dist/cg-researcher/cg-researcher
           codesign --verify --strict dist/cg-researcher/cg-researcher
-          cp -R LICENSE README.md SECURITY.md INVARIANTS.md config scripts install.command uninstall.command dist/cg-researcher/
+          cp -R LICENSE README.md SECURITY.md INVARIANTS.md config dist/cg-researcher/
+          cp packaging/macos/CLI-INSTALL.md dist/cg-researcher/INSTALL.md
           tar -C dist -czf "dist/cg-researcher-macos-universal.tar.gz" cg-researcher
           ( cd dist && shasum -a 256 cg-researcher-macos-universal.tar.gz > cg-researcher-macos-universal.tar.gz.sha256 )
           cat dist/*.sha256
