@@ -1,0 +1,129 @@
+{
+  "base_main": "3a764b4b807f5fd7220eaf1fee7d46ca4cfec148",
+  "open_pr_inputs": [
+    {
+      "headRefName": "codex/authenticated-ui-pairing",
+      "headRefOid": "c28f23c97620c3bf76c2217e18e853cd52a908b9",
+      "number": 31,
+      "title": "[security] - Authenticate local UI pairing without sending the permanent key"
+    },
+    {
+      "headRefName": "perplexity/llm-tls-hardening",
+      "headRefOid": "35884ff788192d248a698d86ce0721b32113bb9d",
+      "number": 30,
+      "title": "[security] - TLS 1.3 + Mozilla roots for the external model; https_only and TLS 1.2 floor for all remote egress"
+    },
+    {
+      "headRefName": "codex/full-write-previews",
+      "headRefOid": "32e8717ddf86b839e8490c784c343afdee281111",
+      "number": 27,
+      "title": "[security] - Show the full Gmail body before confirmation"
+    }
+  ],
+  "merged_in_main": {
+    "28": "99e119af498a5c457b1620b8597c5bd97739c13a",
+    "29": "88385125d462e07d0e1b6b25de48f94ae8e3c56c",
+    "32": "1db65df5c2f60a66820ad2f2334843c3b0abd71b"
+  },
+  "local_composite_commit": "d679e4ea11104e2b5d27b6ccae8b046fad8fca0f",
+  "composite_tree": "3c0fff6a67633e88db7e752bbc8431087250183d",
+  "binary_sha256": "4ed401fefdcecfb15f6d8b97e2a79b6bffab6de136977da13d97fadaa0e32669",
+  "toolchain": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "platform": {
+    "arch": "arm64",
+    "macos": "27.0.1"
+  },
+  "model": [
+    {
+      "name": "qwen3.8:27b-mlx-cg",
+      "digest": "c4472360741adbd8757713b465fb169f2af2927cd6756998f9b8f33652330196",
+      "context_length": 32768
+    }
+  ],
+  "focused_tests": [
+    {
+      "package": "cg-core",
+      "filter": "egress::tests",
+      "exit_code": 0,
+      "passed": 6
+    },
+    {
+      "package": "cg-core",
+      "filter": "auto_approve",
+      "exit_code": 0,
+      "passed": 2
+    },
+    {
+      "package": "cg-connectors",
+      "filter": "write_confirmation_includes_the_entire_body",
+      "exit_code": 0,
+      "passed": 1
+    },
+    {
+      "package": "cg-researcher",
+      "filter": "pairing",
+      "exit_code": 0,
+      "passed": 2
+    },
+    {
+      "package": "cg-researcher",
+      "filter": "ui_refuses_an_impostor",
+      "exit_code": 0,
+      "passed": 1
+    },
+    {
+      "package": "cg-researcher",
+      "filter": "launcher_maps_wildcard",
+      "exit_code": 0,
+      "passed": 1
+    },
+    {
+      "package": "cg-researcher",
+      "filter": "settings_require_auth_whitelist_and_ack_for_relaxations",
+      "exit_code": 0,
+      "passed": 1
+    }
+  ],
+  "http_checks": [
+    {
+      "path": "unauthenticated",
+      "http_status": 401
+    },
+    {
+      "path": "foreign Host",
+      "http_status": 421
+    },
+    {
+      "path": "foreign Origin",
+      "http_status": 403
+    },
+    {
+      "path": "TLS roots overlay refused",
+      "http_status": 400
+    },
+    {
+      "path": "write auto approval overlay refused",
+      "http_status": 400
+    },
+    {
+      "path": "valid authenticated status",
+      "http_status": 200
+    },
+    {
+      "path": "home/config/key permissions",
+      "result": "0700/0600/0600"
+    }
+  ],
+  "screenshots": {
+    "04-key-validation.png": "7a1098d273bddd808a64528072861505983b7eb05a464b774369fc6485e83111",
+    "01-live-qwen-chat.png": "f1faf562cf90d7f9dcf1eaf449e5a2f7b7ef5e014ccc142d17992bdaf35f9ed8",
+    "07-session-expired.png": "ec7c1c4068707afcae2ee4ca1a8866ccd5836fee925e090b54072df9189d967c",
+    "06-injection-guard.png": "92d37ce8d98fb091dde55c025f67679de958771c621d4d03d52560d6894f4ee7",
+    "05-status-audit.png": "2afe5d184ddc2dff575f3755ada8959eb8065d6c73f91da59c6d6d54cde49f05",
+    "03-policy-controls.png": "fb61541218689f5d3cde16f1058672d9eb1f759b3eeba20d64f8e652d115cbb4",
+    "02-model-settings.png": "da3ca099fd4e7662f570f73a171d87eda23839449d9dbe22ffb622f43b0e8013"
+  },
+  "ad_hoc_zip_sha256": "84bd80ecba52cf6ea2290b7607f6cd339fa577cec1a87cde486f86e246835c22",
+  "result": "No product regression found in the exercised combined paths; limitations are recorded in README.md.",
+  "final_audit_records": 23
+}
