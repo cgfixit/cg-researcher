@@ -44,7 +44,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 button{font:inherit;color:var(--text);background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:8px 14px;cursor:pointer}
 button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
 button:disabled{opacity:.5;cursor:progress}
-.file{position:relative;flex-direction:row;color:var(--text);border:1px dashed var(--border);border-radius:6px;padding:7px 12px;cursor:pointer}
+.file{position:relative;overflow:hidden;flex-direction:row;color:var(--text);border:1px dashed var(--border);border-radius:6px;padding:7px 12px;cursor:pointer}
 .file input{position:absolute;inset:0;opacity:0;cursor:pointer}
 .log{display:flex;flex-direction:column;gap:12px;min-height:30vh;max-height:calc(100dvh - 300px);overflow:auto;padding:4px 2px 12px}
 .msg{padding:12px 14px;border-radius:var(--r);background:var(--surface);border:1px solid var(--border);white-space:pre-wrap;overflow-wrap:anywhere}
@@ -99,10 +99,6 @@ label.off{opacity:.55}
   .tabs button{padding:6px 8px;flex:1}
   main{padding:12px}.msg.user,.msg.bot{max-width:100%}
   input,select,textarea{font-size:16px}
-  /* WebKit sizes a file input from its font; at 16px it is wider than a phone
-     viewport. Let the control shrink instead of widening the page. */
-  .composer .row>*{max-width:100%;min-width:0}
-  input[type=file]{max-width:100%;min-width:0}
   .composer .row{gap:8px}
   .composer .send{margin-left:auto}
   .log{max-height:calc(100dvh - 330px)}

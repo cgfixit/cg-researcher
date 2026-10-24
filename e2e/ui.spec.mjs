@@ -82,8 +82,19 @@ test('mobile layout has no horizontal overflow', async ({ browser }) => {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
   const page = await ctx.newPage();
   await paired(page);
-  const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-  expect(over).toBeLessThanOrEqual(0);
+  // On failure, name the boxes that cross the right edge; "5px over" alone is
+  // not debuggable from a CI log.
+  const { over, culprits } = await page.evaluate(() => {
+    const iw = window.innerWidth;
+    const culprits = [];
+    for (const el of document.querySelectorAll('body *')) {
+      if (el.closest('[hidden]')) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.right > iw) culprits.push(`${el.tagName.toLowerCase()}#${el.id}.${el.className} right=${Math.round(r.right)} w=${Math.round(r.width)}`);
+    }
+    return { over: document.documentElement.scrollWidth - iw, culprits };
+  });
+  expect(over, culprits.join('\n')).toBeLessThanOrEqual(0);
   await expect(page.locator('.tabs')).toBeVisible();
   await ctx.close();
 });
