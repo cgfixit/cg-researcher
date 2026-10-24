@@ -333,8 +333,9 @@ async fn app_css() -> Response {
 
 // ------------------------------------------------------------ pairing
 
-/// API-key holders (the `cg-researcher ui` command) mint a single-use pairing
-/// token. Only that dead-on-use token ever appears in a URL or argv.
+/// API-key holders (scripts, curl) mint a single-use pairing token with the
+/// bearer key. The `cg-researcher ui` command uses the key-less challenge /
+/// proof pair below instead. Only the dead-on-use token ever appears in a URL.
 async fn pair(State(s): State<Arc<AppState>>, h: HeaderMap) -> Response {
     if let Err(r) = gate_with(&s, &h, false).await {
         return r;

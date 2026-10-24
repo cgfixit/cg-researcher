@@ -53,9 +53,16 @@ client is an `Egress`, which pins hosts, refuses redirects and proxies, and chec
 
 ## Known weaknesses (accepted, documented)
 
-- **macOS Keychain write:** `security add-generic-password -w <value>` puts the refresh token on
-  argv for the call's lifetime, so a same-user `ps` can read it. This is accepted under the
-  single-operator model. The file fallback is 0600.
+- **Pairing code on argv (macOS):** `cg-researcher ui` hands the single-use pairing URL to
+  `/usr/bin/open` as an argument, so a same-user `ps` can read the code while `open` runs (120 s
+  TTL, dead on first use). Accepted under the single-operator model; `ui --print` avoids it. The
+  Keychain write itself no longer touches argv: `keychain.rs` calls Security.framework
+  (`set_generic_password`) directly instead of the `security` CLI.
+- **Loopback overrides exist for development:** `llm.allow_non_loopback = true` in cg.toml lets the
+  model URL leave loopback, and the environment variable `CG_ALLOW_NON_LOOPBACK_BIND=1` lets
+  `server.host` bind a non-loopback address. Both are refused by `Config::validate` otherwise, the
+  UI overlay cannot set either, and neither is set by `init`, the installer or the launchd plists.
+  `CG_LOG` selects the stderr log filter (`tracing` syntax); it never adds an exporter.
 - **Audit tail truncation:** a signed head (`audit.pb.head`: count + last MAC, HMAC'd under a
   separate label) now catches removal of whole trailing records. Limit: a same-user attacker who can
   read `audit.key` can forge a head for a truncated log. Detecting that needs an off-host anchor (copy
@@ -107,8 +114,9 @@ Assumed attacker: a malicious web page in the same browser. Mitigations:
   challenge. The permanent API key is never sent by the launcher. Client/server proof labels
   are distinct; proofs from a previous server instance cannot mint sessions after restart.
   Older servers without this handshake are refused; restart the server after upgrading.
-- CSP `default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self';
-  frame-ancestors 'none'`, plus nosniff, no-referrer, no-store, COOP/CORP and a Permissions-Policy.
+- CSP `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:;
+  connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'` (`img-src 'self' data:`
+  is the only source beyond self; the shipped UI renders no images, so it is unused headroom today), plus nosniff, no-referrer, no-store, COOP/CORP and a Permissions-Policy.
   All model or server text is rendered with `textContent`; a test fails the build on any
   HTML-string sink.
 - Streamed answers (`/query/stream`) pass the same output guard as final answers before they leave

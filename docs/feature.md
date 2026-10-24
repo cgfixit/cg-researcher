@@ -1,8 +1,9 @@
 # Features
 
-Status: **done** = implemented with tests; **partial** = works with stated limits; **planned** = slot
-exists, no code. "Verified" says where it has actually run: `L` = Linux sandbox tests/smoke, `M` = on a Mac,
-`R` = against the real third-party service. Nothing is `M` or `R` yet (macOS CI is written but hasn't run).
+Status: **done** = implemented with tests; **partial** = works with stated limits; **not started** = listed
+intent only, no code or config slot. "Verified" says where it has actually run: `L` = Linux sandbox
+tests/smoke, `CI` = GitHub's macOS runners (macos-15, macos-latest; a runner, not a daily-use Mac), `M` = on
+an operator's Mac, `R` = against the real third-party service. Nothing is `M` or `R` yet.
 
 | area | feature | status | verified |
 |---|---|---|---|
@@ -25,9 +26,9 @@ exists, no code. "Verified" says where it has actually run: `L` = Linux sandbox 
 | Connectors | Gmail search/read/draft/send (single recipient, human-approved) | done | L (mock) |
 | Connectors | Google Calendar list/create (no attendees) | done | L (mock) |
 | Connectors | 1Password metadata search (`op item list` only) | done | L (mock) |
-| Connectors | Discord / WhatsApp / voice | planned | — |
-| macOS | Keychain secrets | done | L (compiled), CI written |
-| macOS | launchd service + daily maintenance job | done | CI written |
+| Connectors | Discord / WhatsApp / voice | not started | — |
+| macOS | Keychain secrets | done | L (compiled), CI (throwaway keychain round trip) |
+| macOS | launchd service + daily maintenance job | done | CI (`install-smoke`, push/schedule only) |
 | macOS | install/uninstall `.sh` + `.command`, legacy `~/.cg-agent` migration | done | shellcheck |
-| macOS | Apple Silicon `.app` bundle, ad-hoc signed, draft release | done; not notarized | L (launch path), CI written |
+| macOS | Apple Silicon `.app` bundle, ad-hoc signed, draft release | done; not notarized | L (launch path), CI (release.yml build) |
 | Dropped | Long-term memory (semantic/episodic/procedural) | removed by request | — |

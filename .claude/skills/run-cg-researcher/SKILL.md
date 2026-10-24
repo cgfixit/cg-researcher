@@ -69,7 +69,7 @@ Open it in a browser, or run the Playwright suite instead, which starts its own 
 cd e2e && npm ci --ignore-scripts && npx playwright install --only-shell chromium webkit && npx playwright test
 ```
 
-The suite is six specs run in Chromium and WebKit. In this repo's Linux sandbox, Chromium and Playwright are preinstalled; do not run `playwright install` there.
+The suite is nine specs (`ui.spec.mjs` six, `stream.spec.mjs` three) run in Chromium and WebKit. In this repo's Linux sandbox, Chromium and Playwright are preinstalled; do not run `playwright install` there.
 
 ## 5. Audit and teardown
 

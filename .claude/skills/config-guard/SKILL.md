@@ -17,7 +17,7 @@ The checker is the Rust test suite, not a hand parser. A filter that matches zer
 | C2 | FAIL | Every `[connectors.*]` table ships `enabled = false`; an enabled connector with an empty allowlist is a startup error, never "allow everyone" | `shipped_config_parses_and_keeps_safe_defaults`, `telegram::tests::*`, `sms::tests::pin_allowlist_and_lockout` |
 | C3 | FAIL | `tools.auto_approve_writes = false`, `tools.remote_origins_read_only = true` | `defaults_are_offline_and_loopback`, `agent::tests::remote_origins_are_never_offered_write_tools` |
 | C4 | FAIL | All `[external.rules]` ship closed: `send_local_context`, `allow_attachment_text`, `allow_images`, `allow_telegram` false; budgets and caps inside the ranges `Config::validate` enforces | `defaults_are_offline_and_loopback`, `Config::validate` |
-| C5 | FAIL | `llm.base_url` and `server.host` are loopback; `allow_non_loopback` is false; non-loopback is refused at load | `non_loopback_llm_is_refused_by_default`, `Config::validate` |
+| C5 | FAIL | `llm.base_url` and `server.host` are loopback; `allow_non_loopback` is false; non-loopback is refused at load (the only overrides are that key and the `CG_ALLOW_NON_LOOPBACK_BIND=1` environment variable, both documented in SECURITY.md and neither settable from the UI) | `non_loopback_llm_is_refused_by_default`, `Config::validate` |
 | C6 | FAIL | Quoted booleans (`"true"`) and unknown keys are rejected, so a typo cannot silently open a gate | `quoted_bool_and_unknown_keys_are_refused` (`deny_unknown_fields` on every config struct) |
 | C7 | FAIL | `external.model` must match `external.provider` (`claude-*` for anthropic, `grok-*` for xai); `xai_region` is `global` or `us` | `external_model_must_match_provider`, `Config::validate` |
 | C8 | FAIL | Secrets are references only (`env:`, `op://`, `keychain:`, `file:`); no inline key in `cg.toml` or in `ui-settings.toml` | `secrets` tests, `settings_require_auth_whitelist_and_ack_for_relaxations` |
@@ -37,8 +37,8 @@ Then diff-read `config/cg.toml` for accidental quoted booleans, a flipped `enabl
 
 ```bash
 git diff main...HEAD -- config/cg.toml crates/cg-core/src/config.rs crates/cg-core/src/settings.rs
-rg -n 'enabled = ' config/cg.toml
-rg -n '<the value you changed>' README.md docs/ SECURITY.md
+grep -n 'enabled = ' config/cg.toml
+grep -rn '<the value you changed>' README.md docs/ SECURITY.md
 ```
 
 ## Interpret
