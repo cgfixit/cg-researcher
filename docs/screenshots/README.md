@@ -14,6 +14,16 @@ production source. The browser used loopback port 19038; generation used real
 Ollama at `http://127.0.0.1:11434/v1`, model `qwen3.8:27b-mlx-cg`
 (model digest `c4472360741adbd8757713b465fb169f2af2927cd6756998f9b8f33652330196`).
 
+A subsequent review fix maps wildcard bind addresses to loopback for launcher
+connections (`ui` and `app`), without changing the server bind or egress policy.
+Before the fix, an actual `ui --print` invocation with an explicitly permitted
+`0.0.0.0` configuration failed with `scheme http not allowed`. After rebuilding,
+the same command succeeded against the disposable loopback server and the browser
+completed pairing and scrubbed the fragment. A focused regression covers IPv4/IPv6
+wildcards, preservation of specific addresses, and invalid input. The seven images
+remain captures of the source revision above; they were not recaptured after this
+launcher-only change.
+
 ## Gallery
 
 ### 1. Real corpus answer and taint propagation

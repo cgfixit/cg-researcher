@@ -6,6 +6,25 @@ use tower::ServiceExt;
 
 use crate::serve::{AppState, router};
 
+#[test]
+fn launcher_maps_wildcard_binds_without_changing_specific_addresses() {
+    for (bind, destination) in [
+        ("0.0.0.0", "127.0.0.1:19100"),
+        ("::", "[::1]:19100"),
+        ("127.0.0.2", "127.0.0.2:19100"),
+        ("::1", "[::1]:19100"),
+        ("192.0.2.1", "192.0.2.1:19100"),
+    ] {
+        assert_eq!(
+            crate::launcher_addr(bind, 19100)
+                .expect("valid bind address")
+                .to_string(),
+            destination
+        );
+    }
+    assert!(crate::launcher_addr("invalid", 19100).is_err());
+}
+
 async fn state(limit: usize) -> (Arc<AppState>, tempfile::TempDir) {
     let dir = tempfile::tempdir().expect("tmp");
     let layout = cg_core::paths::Layout::new(dir.path());
