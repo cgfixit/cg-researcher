@@ -21,7 +21,7 @@ pub struct NetConfig {
     pub enabled: bool,
     pub allowed_cidrs: Vec<String>,
     /// Also expose `net_connections` (macOS): a numeric snapshot from the
-    /// bundled CyClaw-Net-Viewer `netboard --cli -n -a` at ~/.cg-agent/bin/netboard.
+    /// bundled CyClaw-Net-Viewer `netboard --cli -n -a` at ~/.cg-researcher/bin/netboard.
     pub include_connections: bool,
 }
 

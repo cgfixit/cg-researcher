@@ -27,7 +27,7 @@ impl Runtime {
         let layout = Layout::new(home);
         anyhow::ensure!(
             layout.config().is_file(),
-            "no config at {}; run `cg-agent init` first",
+            "no config at {}; run `cg-researcher init` first",
             layout.config().display()
         );
         let mut cfg = Config::load_with_overlay(&layout.config(), Some(&layout.settings()))?;

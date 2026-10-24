@@ -22,7 +22,7 @@ pub enum Mode {
 #[serde(deny_unknown_fields, default)]
 pub struct AppConfig {
     pub mode: Mode,
-    /// Data directory; empty means `~/.cg-agent`.
+    /// Data directory; empty means `~/.cg-researcher`.
     pub home: String,
 }
 impl Default for AppConfig {
@@ -157,8 +157,8 @@ impl Default for ExternalConfig {
             enabled: false,
             provider: crate::external::Provider::Anthropic,
             model: String::new(),
-            anthropic_key_ref: "keychain:cg-agent/anthropic_api_key".into(),
-            xai_key_ref: "keychain:cg-agent/xai_api_key".into(),
+            anthropic_key_ref: "keychain:cg-researcher/anthropic_api_key".into(),
+            xai_key_ref: "keychain:cg-researcher/xai_api_key".into(),
             xai_region: "global".into(),
             timeout_secs: 120,
             rules: ExternalRules::default(),

@@ -21,7 +21,7 @@ pub const TELEMETRY_KILL: &[(&str, &str)] = &[
     ("OLLAMA_NOPRUNE", "1"),
 ];
 
-const SAFE_PATH: &str = "/usr/bin:/bin:/usr/sbin:/sbin";
+pub const SAFE_PATH: &str = "/usr/bin:/bin:/usr/sbin:/sbin";
 
 /// A command with a cleared environment plus an explicit pass-through list.
 pub fn clean_command(program: &Path, pass_through: &[&str]) -> Command {

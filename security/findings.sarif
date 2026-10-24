@@ -27,9 +27,9 @@
     {
       "tool": {
         "driver": {
-          "name": "cg-agent-manual-review",
+          "name": "cg-researcher-manual-review",
           "version": "1",
-          "informationUri": "https://github.com/cgfixit/cg-agent",
+          "informationUri": "https://github.com/cgfixit/cg-researcher",
           "rules": [
             {
               "id": "CG-ACC-001",
@@ -153,7 +153,7 @@
             {
               "physicalLocation": {
                 "artifactLocation": {
-                  "uri": "crates/cg-agent/src/serve.rs"
+                  "uri": "crates/cg-researcher/src/serve.rs"
                 }
               }
             }

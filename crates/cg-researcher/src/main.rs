@@ -1,4 +1,4 @@
-//! cg-agent: local-first, telemetry-free agent. See README.md / SECURITY.md.
+//! cg-researcher: local-first, telemetry-free agent. See README.md / SECURITY.md.
 #![forbid(unsafe_code)]
 
 mod chat;
@@ -16,16 +16,17 @@ const DEFAULT_CONFIG: &str = include_str!("../../../config/cg.toml");
 
 #[derive(Parser)]
 #[command(
-    name = "cg-agent",
+    name = "cg-researcher",
     version,
     about = "Local-first RAG agent with gated connectors (no telemetry)"
 )]
 struct Cli {
-    /// Data directory (default $CG_HOME or ~/.cg-agent)
+    /// Data directory (default $CG_HOME or ~/.cg-researcher)
     #[arg(long, global = true)]
     home: Option<PathBuf>,
+    /// Omitted only when launched as cg-researcher.app (then: `app`).
     #[command(subcommand)]
-    cmd: Cmd,
+    cmd: Option<Cmd>,
 }
 
 #[derive(Subcommand)]
@@ -59,13 +60,17 @@ enum Cmd {
     /// includes audit-chain verification) and records the outcome in the
     /// audit log. Exits non-zero on failure. No network beyond loopback.
     Maintain,
-    /// Open the local web UI (needs `cg-agent serve` running). Mints a
+    /// Open the local web UI (needs `cg-researcher serve` running). Mints a
     /// single-use pairing code; the API key never appears in a URL.
     Ui {
         /// Print the URL instead of opening the browser.
         #[arg(long)]
         print: bool,
     },
+    /// What cg-researcher.app runs on double-click: `init` on first launch,
+    /// start `serve` in the background unless one is already listening
+    /// (e.g. the launchd agent), then open the paired web UI.
+    App,
     /// Launch CyClaw-Net-Viewer (macOS) or print its CLI snapshot.
     Netviewer {
         #[arg(long)]
@@ -89,6 +94,7 @@ fn init_logging() {
     tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_writer(std::io::stderr)
+        .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stderr()))
         .with_target(false)
         .init();
 }
@@ -108,7 +114,16 @@ fn main() -> anyhow::Result<()> {
 
 async fn run(cli: Cli) -> anyhow::Result<()> {
     let home = runtime::home(cli.home);
-    match cli.cmd {
+    let cmd = match cli.cmd {
+        Some(c) => c,
+        None if in_app_bundle() => Cmd::App,
+        None => {
+            use clap::CommandFactory;
+            Cli::command().print_help()?;
+            return Ok(());
+        }
+    };
+    match cmd {
         Cmd::Init { force_config } => init(home, force_config),
         Cmd::Chat => {
             let r = Runtime::load(home)?;
@@ -120,7 +135,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             let r = Runtime::load(home)?;
             let (agent, gateways, enabled) = r.agent().await?;
             let key = std::fs::read_to_string(r.layout.api_key())
-                .map_err(|_| anyhow::anyhow!("no API key; run `cg-agent init`"))?;
+                .map_err(|_| anyhow::anyhow!("no API key; run `cg-researcher init`"))?;
             let slot: Arc<AgentSlot> = Arc::new(tokio::sync::RwLock::new(agent));
             let state = Arc::new(serve::AppState::new(
                 slot.clone(),
@@ -241,6 +256,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             res
         }
         Cmd::Ui { print } => ui(home, print).await,
+        Cmd::App => app(home).await,
         Cmd::Netviewer { cli } => netviewer(&home, cli).await,
     }
 }
@@ -293,7 +309,7 @@ fn init(home: PathBuf, force_config: bool) -> anyhow::Result<()> {
         layout.secrets().display()
     );
     println!(
-        "next: put .md/.txt/.docx files in {} and run `cg-agent index`",
+        "next: put .md/.txt/.docx files in {} and run `cg-researcher index`",
         layout.home.join("corpus").display()
     );
     Ok(())
@@ -425,10 +441,79 @@ async fn netviewer(home: &std::path::Path, cli: bool) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests;
 
+/// True when this binary is `<X>.app/Contents/MacOS/<exe>`.
+fn in_app_bundle() -> bool {
+    std::env::current_exe().is_ok_and(|p| is_bundle_exe(&p))
+}
+
+fn is_bundle_exe(p: &std::path::Path) -> bool {
+    let mut it = p.ancestors().skip(1);
+    matches!(
+        (it.next(), it.next(), it.next()),
+        (Some(m), Some(c), Some(app))
+            if m.file_name().is_some_and(|n| n == "MacOS")
+                && c.file_name().is_some_and(|n| n == "Contents")
+                && app.extension().is_some_and(|e| e == "app")
+    )
+}
+
+async fn app(home: PathBuf) -> anyhow::Result<()> {
+    let layout = cg_core::paths::Layout::new(&home);
+    if !layout.api_key().exists() {
+        init(home.clone(), false)?;
+    }
+    let r = Runtime::load(home.clone())?;
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], r.cfg.server.port));
+    let up = || {
+        std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(300)).is_ok()
+    };
+    if !up() {
+        layout.ensure()?;
+        // Detached child (outlives the app's launcher process). Same env
+        // hygiene as sandbox::clean_command: cleared env + telemetry kill.
+        let log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(layout.logs().join("app-serve.log"))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            log.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        }
+        let mut c = std::process::Command::new(std::env::current_exe()?);
+        c.env_clear().env("PATH", cg_core::sandbox::SAFE_PATH);
+        for k in ["HOME", "USER", "LANG", "TMPDIR"] {
+            if let Ok(v) = std::env::var(k) {
+                c.env(k, v);
+            }
+        }
+        for (k, v) in cg_core::sandbox::TELEMETRY_KILL {
+            c.env(k, v);
+        }
+        c.arg("--home")
+            .arg(&home)
+            .arg("serve")
+            .stdin(std::process::Stdio::null())
+            .stdout(log.try_clone()?)
+            .stderr(log)
+            .spawn()?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while !up() {
+            anyhow::ensure!(
+                std::time::Instant::now() < deadline,
+                "serve did not start; see {}",
+                layout.logs().join("app-serve.log").display()
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+    }
+    ui(home, false).await
+}
+
 async fn ui(home: PathBuf, print: bool) -> anyhow::Result<()> {
     let r = Runtime::load(home)?;
     let key = std::fs::read_to_string(r.layout.api_key())
-        .map_err(|_| anyhow::anyhow!("no API key; run `cg-agent init`"))?;
+        .map_err(|_| anyhow::anyhow!("no API key; run `cg-researcher init`"))?;
     let base = format!("http://127.0.0.1:{}", r.cfg.server.port);
     let egress =
         cg_core::egress::Egress::new("ui-pair", &[], true, std::time::Duration::from_secs(5))?;
@@ -437,7 +522,7 @@ async fn ui(home: PathBuf, print: bool) -> anyhow::Result<()> {
         .bearer_auth(key.trim())
         .send()
         .await
-        .map_err(|_| anyhow::anyhow!("cannot reach {base}; is `cg-agent serve` running?"))?;
+        .map_err(|_| anyhow::anyhow!("cannot reach {base}; is `cg-researcher serve` running?"))?;
     anyhow::ensure!(
         resp.status().is_success(),
         "pairing refused: {}",

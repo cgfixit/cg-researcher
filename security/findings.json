@@ -1,6 +1,6 @@
 {
   "generated": "2026-10-24",
-  "target": "cgfixit/cg-agent@cg/main",
+  "target": "cgfixit/cg-researcher@cg/main",
   "packages_scanned": 311,
   "scanners": {
     "cargo-audit 0.22.2": {

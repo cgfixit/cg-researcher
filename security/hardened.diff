@@ -14,7 +14,7 @@ index ea743bd..9799498 100644
 +edition = "2024"
 +rust-version = "1.90"
 +license = "MIT"
-+repository = "https://github.com/cgfixit/cg-agent"
++repository = "https://github.com/cgfixit/cg-researcher"
 +
 +[workspace.lints.rust]
 +unsafe_code = "forbid"

@@ -4,13 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>cg-agent</title>
+<title>cg-researcher</title>
 <link rel="stylesheet" href="/app.css">
 <script src="/app.js" defer></script>
 </head>
 <body>
 <header class="bar">
-  <div class="brand"><span class="mark" aria-hidden="true">cg</span><span>cg-agent</span></div>
+  <div class="brand"><span class="mark" aria-hidden="true">cg</span><span>cg-researcher</span></div>
   <nav class="tabs" role="tablist" aria-label="Sections">
     <button role="tab" data-tab="chat" aria-selected="true">Chat</button>
     <button role="tab" data-tab="models" aria-selected="false">Models</button>
@@ -24,13 +24,13 @@
 <main>
   <section id="locked" class="panel narrow" hidden>
     <h1>Not paired</h1>
-    <p>Open the UI from a terminal with <code>cg-agent ui</code>. It mints a single-use pairing code; nothing secret is stored in this page's URL.</p>
+    <p>Open the UI from a terminal with <code>cg-researcher ui</code>. It mints a single-use pairing code; nothing secret is stored in this page's URL.</p>
   </section>
 
   <section id="tab-chat" class="panel" data-panel>
     <div id="log" class="log" aria-live="polite"></div>
     <form id="chatForm" class="composer" autocomplete="off">
-      <textarea id="q" rows="3" maxlength="4000" placeholder="Ask cg-agent…  (Enter to send, Shift+Enter for a new line)" required></textarea>
+      <textarea id="q" rows="3" maxlength="4000" placeholder="Ask cg-researcher…  (Enter to send, Shift+Enter for a new line)" required></textarea>
       <div class="row">
         <label class="seg"><input type="radio" name="route" value="auto" checked> Auto</label>
         <label class="seg"><input type="radio" name="route" value="local"> Local only</label>

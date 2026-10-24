@@ -54,7 +54,7 @@ pub struct AppState {
     pub recent: Mutex<VecDeque<Instant>>,
     /// UI session tokens (memory only; restart logs the UI out).
     pub sessions: Mutex<Vec<(String, Instant)>>,
-    /// Single-use pairing tokens minted by `cg-agent ui`.
+    /// Single-use pairing tokens minted by `cg-researcher ui`.
     pub pairing: Mutex<Vec<(String, Instant)>>,
 }
 
@@ -296,7 +296,7 @@ async fn app_css() -> Response {
 
 // ------------------------------------------------------------ pairing
 
-/// API-key holders (the `cg-agent ui` command) mint a single-use pairing
+/// API-key holders (the `cg-researcher ui` command) mint a single-use pairing
 /// token. Only that dead-on-use token ever appears in a URL or argv.
 async fn pair(State(s): State<Arc<AppState>>, h: HeaderMap) -> Response {
     if let Err(r) = gate_with(&s, &h, false).await {
@@ -707,7 +707,7 @@ async fn query(
 
 pub async fn serve(state: Arc<AppState>, addr: SocketAddr, max_body: usize) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    tracing::info!("listening on http://{addr} (bearer auth required; UI: `cg-agent ui`)");
+    tracing::info!("listening on http://{addr} (bearer auth required; UI: `cg-researcher ui`)");
     axum::serve(listener, router(state, max_body))
         .with_graceful_shutdown(shutdown())
         .await?;

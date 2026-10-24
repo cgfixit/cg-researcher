@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# cg-agent installer for macOS 14+ (Apple Silicon or Intel). Builds from source
+# cg-researcher installer for macOS 14+ (Apple Silicon or Intel). Builds from source
 # with --locked, ad-hoc code-signs with the hardened runtime, installs to
-# ~/.cg-agent/bin and runs `cg-agent init`. Never uses sudo.
+# ~/.cg-researcher/bin and runs `cg-researcher init`. Never uses sudo.
 #   --with-netviewer   also build CyClaw-Net-Viewer at a pinned commit
-#   --service          install + load a per-user launchd agent (com.cgfixit.cg-agent)
-#   --maintenance      install a daily 03:15 launchd job running `cg-agent maintain`
+#   --service          install + load a per-user launchd agent (com.cgfixit.cg-researcher)
+#   --maintenance      install a daily 03:15 launchd job running `cg-researcher maintain`
 #   --print-plist      print the service plist and exit (used by CI to lint it)
 #   --print-maintenance-plist  print the maintenance plist and exit
 set -euo pipefail
 umask 077
 
-LABEL="com.cgfixit.cg-agent"
-MLABEL="com.cgfixit.cg-agent.maintenance"
+LABEL="com.cgfixit.cg-researcher"
+MLABEL="com.cgfixit.cg-researcher.maintenance"
 NETVIEWER_REPO="https://github.com/cgfixit/CyClaw-Net-Viewer.git"
 NETVIEWER_COMMIT="30871d83d37e2450516f5d689ad2e9d6a8e15045"
 NETVIEWER_TOOLCHAIN="1.85.0"
@@ -34,7 +34,7 @@ for a in "$@"; do
 done
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CG_HOME="${CG_HOME:-$HOME/.cg-agent}"
+CG_HOME="${CG_HOME:-$HOME/.cg-researcher}"
 bin_dir="$CG_HOME/bin"
 plist="$HOME/Library/LaunchAgents/$LABEL.plist"
 mplist="$HOME/Library/LaunchAgents/$MLABEL.plist"
@@ -43,7 +43,7 @@ xml_escape() { local s="$1"; s="${s//&/&amp;}"; s="${s//</&lt;}"; s="${s//>/&gt;
 
 render_plist() {
   local b h
-  b="$(xml_escape "$bin_dir/cg-agent")"
+  b="$(xml_escape "$bin_dir/cg-researcher")"
   h="$(xml_escape "$CG_HOME")"
   cat <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -72,7 +72,7 @@ PLIST
 # after wake, unlike cron, which is why this is launchd and not crontab.
 render_maintenance_plist() {
   local b h
-  b="$(xml_escape "$bin_dir/cg-agent")"
+  b="$(xml_escape "$bin_dir/cg-researcher")"
   h="$(xml_escape "$CG_HOME")"
   cat <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -114,7 +114,7 @@ if [[ "$print_plist" == 1 ]]; then render_plist; exit 0; fi
 if [[ "$print_mplist" == 1 ]]; then render_maintenance_plist; exit 0; fi
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
-  echo "cg-agent targets macOS. On other systems build manually: cargo build --release --locked -p cg-agent" >&2
+  echo "cg-researcher targets macOS. On other systems build manually: cargo build --release --locked -p cg-researcher" >&2
   exit 1
 fi
 major="$(sw_vers -productVersion | cut -d. -f1)"
@@ -122,17 +122,36 @@ if (( major < 14 )); then echo "macOS 14 (Sonoma) or newer required; found $(sw_
 xcode-select -p >/dev/null 2>&1 || { echo "Xcode Command Line Tools required: xcode-select --install" >&2; exit 1; }
 command -v cargo >/dev/null 2>&1 || { echo "cargo not found: install rustup from https://rustup.rs" >&2; exit 1; }
 
-echo "==> building cg-agent for $(uname -m) (release, --locked)"
-( cd "$repo" && cargo build --release --locked -p cg-agent )
+# One-time migration from the pre-rename install (cg-agent -> cg-researcher).
+# Moves data, retires the old launchd jobs. Keychain items cannot be renamed
+# without reading the secret, so API keys must be re-saved once (UI → Models).
+old_home="$HOME/.cg-agent"
+if [[ -d "$old_home" && ! -e "$CG_HOME" && "$CG_HOME" == "$HOME/.cg-researcher" ]]; then
+  echo "==> migrating $old_home -> $CG_HOME"
+  for l in com.cgfixit.cg-agent com.cgfixit.cg-agent.maintenance; do
+    launchctl bootout "gui/$(id -u)/$l" 2>/dev/null || true
+    rm -f "$HOME/Library/LaunchAgents/$l.plist"
+  done
+  mv -- "$old_home" "$CG_HOME"
+  rm -f -- "$CG_HOME/bin/cg-agent"
+  for f in "$CG_HOME/cg.toml" "$CG_HOME/ui-settings.toml"; do
+    [[ -f "$f" ]] && sed -i '' -e 's#keychain:cg-agent/#keychain:cg-researcher/#g' -e 's#\.cg-agent/#.cg-researcher/#g' "$f"
+  done
+  echo "    re-save API keys once (old Keychain service 'cg-agent' is not readable as 'cg-researcher')"
+  echo "    then run: cg-researcher index   (RAG schema v2 rebuilds the index)"
+fi
+
+echo "==> building cg-researcher for $(uname -m) (release, --locked)"
+( cd "$repo" && cargo build --release --locked -p cg-researcher )
 mkdir -p "$bin_dir" "$CG_HOME/logs"
 chmod 700 "$CG_HOME" "$bin_dir" "$CG_HOME/logs"
-install -m 0755 "$repo/target/release/cg-agent" "$bin_dir/cg-agent"
+install -m 0755 "$repo/target/release/cg-researcher" "$bin_dir/cg-researcher"
 # Ad-hoc signature + hardened runtime: stable enough for Gatekeeper/AMFI on the
 # building Mac, but NOT a Developer ID. Each rebuild changes the code identity,
 # so Keychain items show a one-time "Always Allow" prompt after upgrades.
-codesign --force --sign - --options runtime --identifier "$LABEL" "$bin_dir/cg-agent"
-codesign --verify --strict "$bin_dir/cg-agent"
-"$bin_dir/cg-agent" --home "$CG_HOME" init
+codesign --force --sign - --options runtime --identifier "$LABEL" "$bin_dir/cg-researcher"
+codesign --verify --strict "$bin_dir/cg-researcher"
+"$bin_dir/cg-researcher" --home "$CG_HOME" init
 
 if [[ "$with_netviewer" == 1 ]]; then
   command -v rustup >/dev/null 2>&1 || { echo "rustup required for Net-Viewer's pinned toolchain" >&2; exit 1; }
@@ -169,11 +188,11 @@ fi
 
 cat <<MSG
 
-cg-agent installed: $bin_dir/cg-agent
+cg-researcher installed: $bin_dir/cg-researcher
   config   $CG_HOME/cg.toml   (all connectors ship disabled)
-  corpus   $CG_HOME/corpus    then: cg-agent index
-  chat     $bin_dir/cg-agent chat
-  check    $bin_dir/cg-agent selftest
-  web UI   $bin_dir/cg-agent ui        (with \`cg-agent serve\` or --service running)
+  corpus   $CG_HOME/corpus    then: cg-researcher index
+  chat     $bin_dir/cg-researcher chat
+  check    $bin_dir/cg-researcher selftest
+  web UI   $bin_dir/cg-researcher ui        (with \`cg-researcher serve\` or --service running)
 Add to PATH:  export PATH="$bin_dir:\$PATH"
 MSG

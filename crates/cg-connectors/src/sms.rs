@@ -107,10 +107,9 @@ pub async fn build(ctx: &Ctx<'_>) -> anyhow::Result<Parts> {
         .await
         .map_err(|e| anyhow::anyhow!("sms auth token: {e}"))?;
     let pin = if c.require_pin {
-        let p =
-            ctx.secrets.resolve(&c.pin_ref).await.map_err(|e| {
-                anyhow::anyhow!("sms pin ({e}); run `cg-agent init` or set pin_ref")
-            })?;
+        let p = ctx.secrets.resolve(&c.pin_ref).await.map_err(|e| {
+            anyhow::anyhow!("sms pin ({e}); run `cg-researcher init` or set pin_ref")
+        })?;
         anyhow::ensure!(
             p.expose().len() >= 6 && !p.expose().contains(char::is_whitespace),
             "sms: PIN must be >= 6 non-space characters"

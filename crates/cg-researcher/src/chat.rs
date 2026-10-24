@@ -43,7 +43,7 @@ pub async fn run(agent: Arc<Agent>) -> anyhow::Result<()> {
     let lim = agent.config().attachments.clone();
     let mut pending: Vec<Attachment> = Vec::new();
     eprintln!(
-        "cg-agent chat — model {} | external {} | tools {} | /attach <path>  /ext <q>  /clear  /quit",
+        "cg-researcher chat — model {} | external {} | tools {} | /attach <path>  /ext <q>  /clear  /quit",
         agent.config().llm.model,
         if agent.has_external() {
             "configured (asks first)"
