@@ -215,7 +215,7 @@ function meta(r) {
   const box = el('div', { class: 'meta' });
   const model = r.answer_model || 'paused';
   box.append(el('span', { class: 'tag' + (model.startsWith('external') ? ' ext' : '') }, model));
-  if (r.tainted) box.append(el('span', { class: 'tag warn', title: 'Turn contained untrusted content' }, 'tainted'));
+  if (r.tainted) box.append(el('span', { class: 'tag warn', title: 'Additional safeguards apply; automatic write approval is disabled' }, 'Protected context'));
   if (r.blocked) box.append(el('span', { class: 'tag warn' }, 'blocked'));
   if (r.sources && r.sources.length) {
     const ul = el('ul', { class: 'chips', 'aria-label': 'Sources' });

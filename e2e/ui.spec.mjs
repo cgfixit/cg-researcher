@@ -43,6 +43,7 @@ test('chat round trip renders the answer, route meta and copy button', async ({ 
   const bot = page.locator('.msg.bot').last();
   await expect(bot.locator('.body')).toContainText('MOCK ANSWER');
   await expect(bot.locator('.meta')).toBeVisible();
+  await expect(bot.getByText('Protected context', { exact: true })).toHaveAttribute('title', 'Additional safeguards apply; automatic write approval is disabled');
   await expect(bot.locator('.actions button')).toBeVisible();
   expect(problems).toEqual([]);
 });

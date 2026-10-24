@@ -117,7 +117,11 @@ pub async fn run(agent: Arc<Agent>) -> anyhow::Result<()> {
         eprintln!(
             "[{}{}{} | {}]",
             r.answer_model,
-            if r.tainted { " | tainted" } else { "" },
+            if r.tainted {
+                " | protected context"
+            } else {
+                ""
+            },
             if r.sources.is_empty() {
                 String::new()
             } else {
