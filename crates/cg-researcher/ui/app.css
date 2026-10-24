@@ -99,6 +99,10 @@ label.off{opacity:.55}
   .tabs button{padding:6px 8px;flex:1}
   main{padding:12px}.msg.user,.msg.bot{max-width:100%}
   input,select,textarea{font-size:16px}
+  /* WebKit sizes a file input from its font; at 16px it is wider than a phone
+     viewport. Let the control shrink instead of widening the page. */
+  .composer .row>*{max-width:100%;min-width:0}
+  input[type=file]{max-width:100%;min-width:0}
   .composer .row{gap:8px}
   .composer .send{margin-left:auto}
   .log{max-height:calc(100dvh - 330px)}
