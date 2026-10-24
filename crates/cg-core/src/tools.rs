@@ -82,6 +82,10 @@ impl ToolRegistry {
         if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
             anyhow::bail!("tool name {name} must be [A-Za-z0-9_]");
         }
+        let spec = t.spec();
+        if spec.effect == Effect::Write && spec.remote_ok {
+            anyhow::bail!("tool {name} is a write tool and cannot be remote_ok (I7)");
+        }
         if self.tools.insert(name, t).is_some() {
             anyhow::bail!("tool {name} registered twice");
         }
@@ -161,4 +165,49 @@ pub trait InboundHandler: Send + Sync {
 pub trait Gateway: Send + Sync {
     fn name(&self) -> &'static str;
     async fn run(self: Arc<Self>, handler: Arc<dyn InboundHandler>) -> anyhow::Result<()>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Spec(ToolSpec);
+    #[async_trait]
+    impl Tool for Spec {
+        fn spec(&self) -> ToolSpec {
+            self.0.clone()
+        }
+        async fn call(&self, _a: Value) -> Result<String, ToolError> {
+            Ok(String::new())
+        }
+    }
+
+    fn spec(name: &'static str, effect: Effect, remote_ok: bool) -> ToolSpec {
+        ToolSpec {
+            name,
+            description: "t",
+            parameters: serde_json::json!({"type":"object"}),
+            effect,
+            untrusted_output: false,
+            remote_ok,
+        }
+    }
+
+    #[test]
+    fn registry_refuses_remote_ok_write_tools() {
+        let mut r = ToolRegistry::default();
+        assert!(
+            r.register(Arc::new(Spec(spec("send", Effect::Write, false))))
+                .is_ok()
+        );
+        assert!(
+            r.register(Arc::new(Spec(spec("read", Effect::Read, true))))
+                .is_ok()
+        );
+        let e = r
+            .register(Arc::new(Spec(spec("remote_send", Effect::Write, true))))
+            .expect_err("must refuse");
+        assert!(e.to_string().contains("remote_ok"));
+        assert!(r.get("remote_send").is_none());
+    }
 }
