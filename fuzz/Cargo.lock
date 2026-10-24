@@ -185,6 +185,7 @@ dependencies = [
  "base64",
  "cg-core",
  "libfuzzer-sys",
+ "tokio",
 ]
 
 [[package]]

@@ -20,7 +20,7 @@ them), then run `cg-researcher index`.
 
 ```bash
 cg-researcher init                         # owner-only home, config, audit key, API key, SMS PIN
-ollama pull qwen3:8b && ollama pull all-minilm
+ollama pull qwen3.8:27b-mlx-cg && ollama pull gemma4-26b-a4b:ud-q4_k_xl-cg && ollama pull all-minilm
 cp ~/notes/*.md ~/.cg-researcher/corpus/
 cg-researcher index                        # FTS5 + embeddings into rag.sqlite3
 cg-researcher selftest
@@ -28,7 +28,7 @@ cg-researcher selftest
 
 Any OpenAI-compatible server on loopback works: set `[llm] base_url` and `model` in
 `~/.cg-researcher/cg.toml` (LM Studio `:1234/v1`, llama-server or mlx_lm.server `:8080/v1`). For PNG
-attachments to reach a model, set `llm.vision_model`.
+attachments to reach a model, set `llm.vision_model` (default `gemma4-26b-a4b:ud-q4_k_xl-cg`; `""` disables).
 
 ## Everyday use
 
