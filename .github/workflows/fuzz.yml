@@ -10,6 +10,7 @@ on:
   pull_request:
     paths:
       - "crates/cg-core/src/attachments.rs"
+      - "crates/cg-core/src/config.rs" # AttachmentConfig limits drive the attachments target
       - "crates/cg-core/src/sanitizer.rs"
       - "crates/cg-core/src/secrets.rs"
       - "crates/cg-core/src/stream.rs"

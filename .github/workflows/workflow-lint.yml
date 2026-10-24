@@ -26,8 +26,15 @@ jobs:
           echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  al.tgz" | sha256sum -c -
           tar xzf al.tgz actionlint
           ./actionlint -color
-      - name: shellcheck
-        run: shellcheck scripts/*.sh e2e/*.sh install.command uninstall.command init.sh
+      - name: shellcheck 0.11.0 (sha256-verified; same version lint.yml pins, not the runner's)
+        run: |
+          set -euo pipefail
+          url=https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz
+          curl -fsSL -o sc.txz "$url"
+          echo "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  sc.txz" | sha256sum -c -
+          tar xJf sc.txz --strip-components=1 shellcheck-v0.11.0/shellcheck
+          ./shellcheck --version | grep -q 'version: 0.11.0'
+          ./shellcheck scripts/*.sh e2e/*.sh install.command uninstall.command init.sh
       - name: uninstaller path safety (stubbed platform commands)
         run: python3 scripts/test-uninstall.py
   zizmor:

@@ -7,9 +7,9 @@ name: ui-e2e
 on:
   push:
     branches: ["main"]
-    paths: ["crates/**", "e2e/**", "Cargo.lock", ".github/workflows/ui-e2e.yml"]
+    paths: ["crates/**", "config/**", "e2e/**", "Cargo.lock", ".github/workflows/ui-e2e.yml"]
   pull_request:
-    paths: ["crates/**", "e2e/**", "Cargo.lock", ".github/workflows/ui-e2e.yml"]
+    paths: ["crates/**", "config/**", "e2e/**", "Cargo.lock", ".github/workflows/ui-e2e.yml"]
   workflow_dispatch:
 permissions:
   contents: read
