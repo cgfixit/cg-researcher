@@ -1,14 +1,14 @@
 # User guide
 
-cg-researcher is a local-first research agent for one person on one Mac (macOS 14+, Apple Silicon
-first). It answers from your own files with a local model, and reaches out only through connectors
+cg-researcher is a local-first research agent for one person on one Mac (Apple Silicon, macOS 14+ including
+macOS 27 Golden Gate, which has no Intel support). It answers from your own files with a local model, and reaches out only through connectors
 you enable.
 
 ## Install
 
 | option | how | notes |
 |---|---|---|
-| From source (supported) | `./scripts/install.sh` or double-click `install.command` | Needs Xcode CLT + rustup. Builds `--locked`, ad-hoc signs, installs `~/.cg-researcher/bin/cg-researcher`. |
+| From source (supported) | `./scripts/install.sh` or double-click `install.command` | Needs Xcode CLT + a native arm64 rustup (not Homebrew `rust`); refuses to run under Rosetta. Builds `--locked`, ad-hoc signs, installs `~/.cg-researcher/bin/cg-researcher`. |
 | As a background service | `./scripts/install.sh --service --maintenance` | launchd `com.cgfixit.cg-researcher` (serve) + `.maintenance` (daily 03:15 health check). |
 | App bundle | download `cg-researcher-macos-arm64.app.zip` from a release, check `shasum -a 256 -c`, unzip to `/Applications` | Ad-hoc signed, **not notarized**: first launch needs right-click → Open. Double-click starts a server (or reuses the launchd one) and opens the UI. |
 

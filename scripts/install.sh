@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# cg-researcher installer for macOS 14+ (Apple Silicon or Intel). Builds from source
+# cg-researcher installer for macOS 14+ on Apple Silicon (macOS 27 "Golden Gate" is Apple
+# silicon only; Intel is best-effort and only on macOS 26 or older). Builds from source
 # with --locked, ad-hoc code-signs with the hardened runtime, installs to
 # ~/.cg-researcher/bin and runs `cg-researcher init`. Never uses sudo.
 #   --with-netviewer   also build CyClaw-Net-Viewer at a pinned commit
@@ -28,7 +29,7 @@ for a in "$@"; do
     --maintenance) maintenance=1 ;;
     --print-plist) print_plist=1 ;;
     --print-maintenance-plist) print_mplist=1 ;;
-    -h|--help) sed -n '2,9p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
     *) echo "unknown option: $a" >&2; exit 2 ;;
   esac
 done
@@ -121,6 +122,21 @@ major="$(sw_vers -productVersion | cut -d. -f1)"
 if (( major < 14 )); then echo "macOS 14 (Sonoma) or newer required; found $(sw_vers -productVersion)" >&2; exit 1; fi
 xcode-select -p >/dev/null 2>&1 || { echo "Xcode Command Line Tools required: xcode-select --install" >&2; exit 1; }
 command -v cargo >/dev/null 2>&1 || { echo "cargo not found: install rustup from https://rustup.rs" >&2; exit 1; }
+# A terminal or rustup running under Rosetta 2 would build x86_64 code on Apple Silicon.
+# Golden Gate is the last macOS release that ships Rosetta, so catch it now.
+if [[ "$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)" == 1 ]]; then
+  echo "this shell is running under Rosetta (x86_64). Re-run natively: arch -arm64 ./scripts/install.sh" >&2
+  echo "and make sure rustup is the arm64 build (rustc -vV should say host: aarch64-apple-darwin)" >&2
+  exit 1
+fi
+# rust-toolchain.toml pins the channel, but only rustup honors it. A Homebrew `rust` or an
+# old toolchain would fail late with an opaque error, so check the workspace rust-version.
+rustc_minor="$(cd "$repo" && rustc --version | sed -n 's/^rustc 1\.\([0-9]*\)\..*/\1/p')"
+if [[ -z "$rustc_minor" ]] || (( rustc_minor < 90 )); then
+  echo "Rust 1.90 or newer required (rust-toolchain.toml pins 1.99.1 via rustup); found: $(cd "$repo" && rustc --version)" >&2
+  echo "install rustup from https://rustup.rs (not Homebrew rust) and re-run" >&2
+  exit 1
+fi
 
 # One-time migration from the pre-rename install (cg-agent -> cg-researcher).
 # Moves data, retires the old launchd jobs. Keychain items cannot be renamed
