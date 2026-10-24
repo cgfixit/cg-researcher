@@ -17,7 +17,7 @@ exists, no code. "Verified" says where it has actually run: `L` = Linux sandbox 
 | UI | Loopback web UI, pairing code, strict CSP, settings whitelist, in-browser reindex, mobile layout | done | L (headless Chromium) |
 | UI | Streaming local answers (SSE `/query/stream`, guarded per chunk, `/query` fallback) | done; external + CLI not streamed | L (Chromium + WebKit, mock model) |
 | Audit | Protobuf HMAC-chained log, signed head, cross-process lock | done | L |
-| CI | UI e2e (Playwright Chromium + WebKit), cargo-fuzz (attachments, sanitizer), llvm-cov floor 70% | done; Actions not run yet | L |
+| CI | UI e2e (Playwright Chromium + WebKit, incl. streaming frames), cargo-fuzz (attachments, sanitizer, stream), llvm-cov floor 70% | done; runs in Actions | L |
 | Connectors | Web search: SerpAPI, opt-in public Google | done | L (mock) |
 | Connectors | netconnect (ARP, RFC1918 allowlist) + Net-Viewer sockets | partial (macOS paths) | L |
 | Connectors | Telegram gateway (numeric allowlist, private chats) | done | L (mock) |
