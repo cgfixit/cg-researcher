@@ -25,8 +25,16 @@ cg-researcher selftest
 cg-researcher ui                     # local web UI (needs serve / --service running)
 ```
 
-cg-researcher is built for **macOS 14+** (Apple Silicon first, Intel via `--target x86_64-apple-darwin`).
+cg-researcher targets **Apple Silicon (arm64) Macs on macOS 14 (Sonoma) or newer**, including macOS 27
+"Golden Gate", which is Apple silicon only. CI runs the Mac jobs on macOS 15 and `macos-latest` (macOS 26 today, Golden Gate once GitHub moves the label); Golden Gate uses the same
+arm64 binary. Intel builds (`--target x86_64-apple-darwin`) are best-effort and
+only possible on macOS 26 or older, because Golden Gate does not run on Intel Macs.
 Linux builds and passes the test suite, but it is best-effort: no Keychain, no launchd, and the installer refuses to run.
+
+Prerequisites for `install.sh`: Xcode Command Line Tools (`xcode-select --install`) and a native arm64
+[rustup](https://rustup.rs) (not Homebrew `rust`; `rust-toolchain.toml` pins 1.99.1 and only rustup honors it).
+The installer refuses to run from a Rosetta shell, so it never builds an x86_64 binary by accident
+(`rustc -vV` should report `host: aarch64-apple-darwin`).
 
 macOS Finder users can double-click `install.command` / `uninstall.command`. Tagged releases also
 publish a draft **Apple Silicon `cg-researcher.app`** (ad-hoc signed, not notarized) plus a universal
@@ -217,12 +225,12 @@ packaging/macos       Info.plist for the .app bundle
 
 ## Status
 
-Verified in this repo's sandbox on Linux x86_64. That covers 116 unit and mock-HTTP tests (graph, audit,
+Verified in this repo's sandbox on Linux x86_64. That covers 132 unit and mock-HTTP tests (graph, audit,
 connectors, external providers via a loopback mock, the UI/HTTP security surface), clippy `-D warnings`
 on 1.99.1, an MSRV 1.90 check, and an end-to-end smoke with `serve`, three concurrent `maintain` runs, UI
 pairing, a headless-browser pass over every tab, 12 Playwright UI tests (Chromium + WebKit), 60 s
 fuzz runs per target (~3.2M inputs, no crashes), 74% line coverage, and the `.app` launch path. **Not yet run on a Mac**: the macOS CI matrix
-(macos-15 / macos-26, Keychain, launchd, installer) is written but GitHub Actions has not executed it
+(macos-15 / macos-latest, Keychain, launchd, installer) is written but GitHub Actions has not executed it
 on this account. Windows is unsupported. Real Anthropic/xAI/Telegram/Twilio/Google/SerpAPI accounts
 were not exercised.
 
