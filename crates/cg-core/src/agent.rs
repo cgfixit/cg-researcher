@@ -222,7 +222,10 @@ impl Agent {
             clean
         };
         let index = Index::open(crate::paths::Layout::new(cfg.home()).index_db())?;
-        let retriever = RwLock::new(Arc::new(Retriever::new(index.load().unwrap_or_default())));
+        let retriever = RwLock::new(Arc::new(index.retriever().unwrap_or_else(|e| {
+            tracing::warn!("index unavailable, retrieval disabled: {e}");
+            Retriever::empty()
+        })));
         let deps = Arc::new(Deps {
             cfg,
             local,
@@ -304,12 +307,11 @@ impl Agent {
                 &c.attachments,
             )
             .await?;
-        let chunks = self.deps.index.load()?;
         *self
             .deps
             .retriever
             .write()
-            .unwrap_or_else(|p| p.into_inner()) = Arc::new(Retriever::new(chunks));
+            .unwrap_or_else(|p| p.into_inner()) = Arc::new(self.deps.index.retriever()?);
         self.deps.audit.append(AuditRecord {
             event: "index_rebuilt".into(),
             origin: cg_audit::Origin::System as i32,
