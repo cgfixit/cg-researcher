@@ -183,6 +183,13 @@ pub fn redact(text: &str) -> String {
     out
 }
 
+/// The output guardrail's text transform (redaction, then link defanging).
+/// Shared by `guardrail_output` and the streaming guard so provisional
+/// streamed text and the final answer pass through the same function.
+pub fn guard_output_text(text: &str) -> (String, usize) {
+    defang_output_links(&redact(text))
+}
+
 fn md_image() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     R.get_or_init(|| {

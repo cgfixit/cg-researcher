@@ -16,5 +16,6 @@ pub mod sandbox;
 pub mod sanitizer;
 pub mod secrets;
 pub mod settings;
+pub mod stream;
 pub mod tools;
 pub mod tune;

@@ -72,6 +72,9 @@ Assumed attacker: a malicious web page in the same browser. Mitigations:
   frame-ancestors 'none'`, plus nosniff, no-referrer, no-store, COOP/CORP and a Permissions-Policy.
   All model or server text is rendered with `textContent`; a test fails the build on any
   HTML-string sink.
+- Streamed answers (`/query/stream`) pass the same output guard as final answers before they leave
+  the process. The guard re-runs over the whole buffered answer, stops streaming if guarding would
+  change text already sent, and holds back the tail that could still be the start of a secret.
 - A settings whitelist plus 409-unless-acknowledged for any relaxation. The UI can never grant write
   approval, change the bind address or enable connectors.
 

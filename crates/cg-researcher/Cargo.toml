@@ -11,6 +11,7 @@ publish = false
 anyhow = "1.0.104"
 async-trait = "0.1.92"
 base64 = "0.23.1"
+futures-util = "0.3.34"
 getrandom = "0.4.3"
 hex = "0.4.3"
 toml = "1.1.8"

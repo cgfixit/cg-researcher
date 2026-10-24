@@ -69,6 +69,7 @@ async fn serve_mock(replies: Vec<Value>) -> (String, Arc<Mock>) {
                     .next()
                     .unwrap_or_default()
                     .to_string();
+                let mut ctype = "application/json";
                 let (status, body) = if first.contains("/v1/messages") {
                     let req: Value =
                         serde_json::from_slice(&buf[head_end..]).unwrap_or(Value::Null);
@@ -85,6 +86,7 @@ async fn serve_mock(replies: Vec<Value>) -> (String, Arc<Mock>) {
                 } else if first.contains("/chat/completions") {
                     let req: Value =
                         serde_json::from_slice(&buf[head_end..]).unwrap_or(Value::Null);
+                    let wants_stream = req["stream"] == json!(true);
                     m.seen.lock().expect("lock").push(req);
                     let r = m
                         .replies
@@ -92,12 +94,29 @@ async fn serve_mock(replies: Vec<Value>) -> (String, Arc<Mock>) {
                         .expect("lock")
                         .pop_front()
                         .unwrap_or_else(|| text_reply("default"));
-                    ("200 OK", r.to_string())
+                    match r["__sse"].as_array() {
+                        // SSE mode: only when the client asked to stream.
+                        Some(parts) if wants_stream => {
+                            ctype = "text/event-stream";
+                            let mut b = String::new();
+                            for p in parts {
+                                let ev = json!({"model":"mock-local","choices":[{"delta":{"content":p}}]});
+                                b.push_str(&format!("data: {ev}\n\n"));
+                            }
+                            b.push_str("data: [DONE]\n\n");
+                            ("200 OK", b)
+                        }
+                        Some(parts) => {
+                            let t: String = parts.iter().filter_map(Value::as_str).collect();
+                            ("200 OK", text_reply(&t).to_string())
+                        }
+                        None => ("200 OK", r.to_string()),
+                    }
                 } else {
                     ("404 Not Found", "{}".to_string())
                 };
                 let resp = format!(
-                    "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    "HTTP/1.1 {status}\r\ncontent-type: {ctype}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
                     body.len()
                 );
                 let _ = sock.write_all(resp.as_bytes()).await;
@@ -107,6 +126,9 @@ async fn serve_mock(replies: Vec<Value>) -> (String, Arc<Mock>) {
     (format!("http://{addr}/v1"), mock)
 }
 
+fn sse_reply(parts: &[&str]) -> Value {
+    json!({"__sse": parts})
+}
 fn text_reply(t: &str) -> Value {
     json!({"choices":[{"message":{"role":"assistant","content":t}}]})
 }
@@ -740,4 +762,104 @@ async fn exhausted_budget_never_calls_the_provider() {
     let r = h.agent.run(q).await;
     assert_eq!(r.answer_model, "external-budget");
     assert!(ext_seen(&h).is_empty());
+}
+
+// ------------------------------------------------------------- streaming
+
+async fn drain(
+    mut rx: tokio::sync::mpsc::UnboundedReceiver<crate::stream::StreamEvent>,
+) -> Vec<crate::stream::StreamEvent> {
+    let mut v = Vec::new();
+    while let Some(e) = rx.recv().await {
+        v.push(e);
+    }
+    v
+}
+
+#[tokio::test]
+async fn streaming_emits_guarded_prefixes_of_the_final_answer() {
+    use crate::stream::StreamEvent;
+    const FAKE: &str = concat!("ghp_", "abcdefghijklmnopqrstuvwxyz", "0123456789");
+    // Secret split across deltas, plus a think block and ordinary prose.
+    let mut parts: Vec<String> = vec!["<think>plan</think>".into(), "Veeam backup jobs ".into()];
+    for c in format!("use key {FAKE} then retry. ").chars() {
+        parts.push(c.to_string());
+    }
+    parts.push("Done.".into());
+    let refs: Vec<&str> = parts.iter().map(String::as_str).collect();
+    let h = harness(vec![sse_reply(&refs)], |_| {}).await;
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let r = h
+        .agent
+        .run_streaming(req("hi", Origin::Cli, Arc::new(DenyAll)), tx)
+        .await;
+    let events = drain(rx).await;
+    let streamed: String = events
+        .iter()
+        .filter_map(|e| match e {
+            StreamEvent::Delta(t) => Some(t.as_str()),
+            StreamEvent::Reset => None,
+        })
+        .collect();
+    assert!(!streamed.is_empty(), "something streamed");
+    assert!(
+        !streamed.contains(FAKE) && !streamed.contains("ghp_abcdefghij"),
+        "{streamed}"
+    );
+    assert!(
+        !streamed.contains("plan"),
+        "think block streamed: {streamed}"
+    );
+    assert!(!r.answer.contains(FAKE));
+    assert!(
+        r.answer.starts_with(&streamed),
+        "stream {streamed:?} vs final {:?}",
+        r.answer
+    );
+    assert_eq!(h.mock.seen.lock().expect("lock")[0]["stream"], json!(true));
+}
+
+#[tokio::test]
+async fn streaming_resets_on_tool_rounds_and_handles_json_fallback() {
+    use crate::stream::StreamEvent;
+    // Round 1: plain JSON tool call (server ignores stream:true) -> reset.
+    // Round 2: plain JSON answer -> delivered through the fallback path.
+    let h = harness(
+        vec![
+            tool_reply("web_search", json!({"q":"x"})),
+            text_reply("real fact is 42"),
+        ],
+        |_| {},
+    )
+    .await;
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let r = h
+        .agent
+        .run_streaming(req("hi", Origin::Cli, Arc::new(DenyAll)), tx)
+        .await;
+    let events = drain(rx).await;
+    assert!(
+        events.iter().any(|e| matches!(e, StreamEvent::Reset)),
+        "{events:?}"
+    );
+    let last_reset = events
+        .iter()
+        .rposition(|e| matches!(e, StreamEvent::Reset))
+        .unwrap_or(0);
+    let after: String = events[last_reset..]
+        .iter()
+        .filter_map(|e| match e {
+            StreamEvent::Delta(t) => Some(t.as_str()),
+            StreamEvent::Reset => None,
+        })
+        .collect();
+    assert!(r.answer.starts_with(&after), "{after:?} vs {:?}", r.answer);
+    assert!(r.answer.contains("42"));
+}
+
+#[tokio::test]
+async fn non_streaming_run_never_requests_a_stream() {
+    let h = harness(vec![text_reply("ok")], |_| {}).await;
+    let _ = h.agent.run(req("hi", Origin::Cli, Arc::new(DenyAll))).await;
+    assert_eq!(h.mock.seen.lock().expect("lock")[0]["stream"], json!(false));
 }

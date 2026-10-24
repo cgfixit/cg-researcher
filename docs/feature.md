@@ -15,6 +15,7 @@ exists, no code. "Verified" says where it has actually run: `L` = Linux sandbox 
 | Chat | Attachments .png (re-encoded, metadata stripped) .docx .md .txt | done | L |
 | External | Anthropic Claude / xAI Grok, triple-gated, no tools, rules + budgets, model id must match provider | done | L (mock) |
 | UI | Loopback web UI, pairing code, strict CSP, settings whitelist, in-browser reindex, mobile layout | done | L (headless Chromium) |
+| UI | Streaming local answers (SSE `/query/stream`, guarded per chunk, `/query` fallback) | done; external + CLI not streamed | L (Chromium + WebKit, mock model) |
 | Audit | Protobuf HMAC-chained log, signed head, cross-process lock | done | L |
 | CI | UI e2e (Playwright Chromium + WebKit), cargo-fuzz (attachments, sanitizer), llvm-cov floor 70% | done; Actions not run yet | L |
 | Connectors | Web search: SerpAPI, opt-in public Google | done | L (mock) |
