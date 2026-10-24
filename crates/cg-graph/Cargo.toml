@@ -1,0 +1,18 @@
+[package]
+name = "cg-graph"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+futures = "0.3.34"
+thiserror = "2.0.21"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+futures = { version = "0.3.34", features = ["executor"] }

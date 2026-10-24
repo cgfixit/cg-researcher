@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-audit",
+          "version": "0.22.2",
+          "informationUri": "https://github.com/rustsec/rustsec",
+          "rules": []
+        }
+      },
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "osv-scanner",
+          "version": "2.7.0",
+          "informationUri": "https://github.com/google/osv-scanner",
+          "rules": []
+        }
+      },
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cg-agent-manual-review",
+          "version": "1",
+          "informationUri": "https://github.com/cgfixit/cg-agent",
+          "rules": [
+            {
+              "id": "CG-ACC-001",
+              "shortDescription": {
+                "text": "Accepted risk: audit-log whole-record tail truncation is undetectable"
+              },
+              "fullDescription": {
+                "text": "The hash chain detects modification, reordering and mid-frame truncation, but deleting whole trailing records leaves a valid shorter chain. Mitigation: ship records off-host or record the head hash externally."
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              }
+            },
+            {
+              "id": "CG-ACC-002",
+              "shortDescription": {
+                "text": "Accepted risk: macOS Keychain secret passed via `security -w` argv"
+              },
+              "fullDescription": {
+                "text": "SecretStore::store passes the value to `security add-generic-password -w`, so for the lifetime of that call it is visible to `ps` for the same user. Reads use `find-generic-password -w`, which prints the value to stdout, not argv."
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              }
+            },
+            {
+              "id": "CG-ACC-003",
+              "shortDescription": {
+                "text": "Duplicate crate versions (foldhash x2, hashbrown x3, syn x2)"
+              },
+              "fullDescription": {
+                "text": "cargo-deny bans=warn. These are transitive, have no advisories, and add only build time and binary size."
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              }
+            },
+            {
+              "id": "CG-ACC-004",
+              "shortDescription": {
+                "text": "Oversized HTTP body returns 400, not 413"
+              },
+              "fullDescription": {
+                "text": "The limit is enforced (DefaultBodyLimit), but because of axum's Json extractor rejection mapping the status code is wrong. This is a cosmetic, not a security, issue."
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              }
+            },
+            {
+              "id": "CG-ACC-005",
+              "shortDescription": {
+                "text": "cargo-audit 0.22.2 release binary has no published checksum"
+              },
+              "fullDescription": {
+                "text": "The local scan used an unverified binary. CI builds cargo-audit from crates.io with --locked."
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "CG-ACC-001",
+          "level": "note",
+          "message": {
+            "text": "The hash chain detects modification, reordering and mid-frame truncation, but deleting whole trailing records leaves a valid shorter chain. Mitigation: ship records off-host or record the head hash externally."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/cg-audit/src/lib.rs"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CG-ACC-002",
+          "level": "note",
+          "message": {
+            "text": "SecretStore::store passes the value to `security add-generic-password -w`, so for the lifetime of that call it is visible to `ps` for the same user. Reads use `find-generic-password -w`, which prints the value to stdout, not argv."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/cg-core/src/secrets.rs"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CG-ACC-003",
+          "level": "note",
+          "message": {
+            "text": "cargo-deny bans=warn. These are transitive, have no advisories, and add only build time and binary size."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Cargo.lock"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CG-ACC-004",
+          "level": "note",
+          "message": {
+            "text": "The limit is enforced (DefaultBodyLimit), but because of axum's Json extractor rejection mapping the status code is wrong. This is a cosmetic, not a security, issue."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/cg-agent/src/serve.rs"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CG-ACC-005",
+          "level": "note",
+          "message": {
+            "text": "The local scan used an unverified binary. CI builds cargo-audit from crates.io with --locked."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/tmp/tools"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

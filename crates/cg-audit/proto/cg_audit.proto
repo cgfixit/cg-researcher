@@ -1,0 +1,46 @@
+// Audit record wire format. One length-delimited frame per record.
+// Each frame's `mac` is HMAC-SHA256(key, prev_mac || frame-with-empty-mac),
+// so deleting, reordering or editing any record breaks verification.
+syntax = "proto3";
+package cg.audit.v1;
+
+enum Origin {
+  ORIGIN_UNSPECIFIED = 0;
+  ORIGIN_CLI = 1;
+  ORIGIN_HTTP = 2;
+  ORIGIN_TELEGRAM = 3;
+  ORIGIN_SMS = 4;
+  ORIGIN_SYSTEM = 5;
+}
+
+message ToolDecision {
+  string tool = 1;
+  // allowed | denied | confirmed | declined | error
+  string decision = 2;
+  string reason = 3;
+  // HMAC fingerprint of the arguments; raw arguments are never stored.
+  string args_fingerprint = 4;
+  uint32 duration_ms = 5;
+}
+
+message AuditRecord {
+  uint64 seq = 1;
+  int64 ts_unix_ms = 2;
+  string event = 3;
+  Origin origin = 4;
+  // HMAC-SHA256 of the query text (CyClaw rule 7). Raw text is never stored.
+  string query_fingerprint = 5;
+  repeated string node_path = 6;
+  double top_score = 7;
+  double top_cosine = 8;
+  string answer_model = 9;
+  repeated ToolDecision tools = 10;
+  bool guardrail_blocked = 11;
+  bool tainted = 12;
+  string outcome = 13;
+  // Redacted, bounded free text for errors and system events.
+  string detail = 14;
+  string sender_fingerprint = 15;
+  bytes prev_mac = 30;
+  bytes mac = 31;
+}

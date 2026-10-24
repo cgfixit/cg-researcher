@@ -1,0 +1,60 @@
+{
+  "generated": "2026-10-24",
+  "target": "cgfixit/cg-agent@cg/main",
+  "packages_scanned": 311,
+  "scanners": {
+    "cargo-audit 0.22.2": {
+      "vulnerabilities": 0,
+      "warnings": 0
+    },
+    "osv-scanner 2.7.0": {
+      "vulnerabilities": 0
+    },
+    "cargo-deny 0.20.2": {
+      "advisories": "ok",
+      "bans": "ok (dup-version warnings only)",
+      "licenses": "ok",
+      "sources": "ok"
+    },
+    "zizmor 1.31.1": {
+      "findings": 0,
+      "pedantic_help": 3
+    },
+    "actionlint 1.7.12": "clean",
+    "shellcheck": "clean",
+    "clippy -D warnings": "clean"
+  },
+  "cve_findings": [],
+  "accepted_risks": [
+    {
+      "id": "CG-ACC-001",
+      "title": "Accepted risk: audit-log whole-record tail truncation is undetectable",
+      "file": "crates/cg-audit/src/lib.rs",
+      "detail": "The hash chain detects modification, reordering and mid-frame truncation, but deleting whole trailing records leaves a valid shorter chain. Mitigation: ship records off-host or record the head hash externally."
+    },
+    {
+      "id": "CG-ACC-002",
+      "title": "Accepted risk: macOS Keychain secret passed via `security -w` argv",
+      "file": "crates/cg-core/src/secrets.rs",
+      "detail": "SecretStore::store passes the value to `security add-generic-password -w`, so for the lifetime of that call it is visible to `ps` for the same user. Reads use `find-generic-password -w`, which prints the value to stdout, not argv."
+    },
+    {
+      "id": "CG-ACC-003",
+      "title": "Duplicate crate versions (foldhash x2, hashbrown x3, syn x2)",
+      "file": "Cargo.lock",
+      "detail": "cargo-deny bans=warn. These are transitive, have no advisories, and add only build time and binary size."
+    },
+    {
+      "id": "CG-ACC-004",
+      "title": "Oversized HTTP body returns 400, not 413",
+      "file": "crates/cg-agent/src/serve.rs",
+      "detail": "The limit is enforced (DefaultBodyLimit), but because of axum's Json extractor rejection mapping the status code is wrong. This is a cosmetic, not a security, issue."
+    },
+    {
+      "id": "CG-ACC-005",
+      "title": "cargo-audit 0.22.2 release binary has no published checksum",
+      "file": "/tmp/tools",
+      "detail": "The local scan used an unverified binary. CI builds cargo-audit from crates.io with --locked."
+    }
+  ]
+}
