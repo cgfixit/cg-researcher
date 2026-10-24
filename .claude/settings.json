@@ -9,8 +9,6 @@
       "Bash(cargo deny:*)",
       "Bash(cargo metadata:*)",
       "Bash(cargo tree:*)",
-      "Bash(cargo run -p cg-researcher:*)",
-      "Bash(cargo run -q -p cg-researcher:*)",
       "Bash(./init.sh:*)",
       "Bash(scripts/lint.sh:*)",
       "Bash(./scripts/lint.sh:*)",
@@ -18,8 +16,7 @@
       "Bash(bash -n:*)",
       "Bash(git status:*)",
       "Bash(git diff:*)",
-      "Bash(git log:*)",
-      "Bash(rg:*)"
+      "Bash(git log:*)"
     ]
   }
 }
