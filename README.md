@@ -1,4 +1,4 @@
-# cg-researcher
+# CG LOCAL RESEARCHER
 
 A local-first research assistant: RAG over your own notes, a loopback model
 (Ollama / LM Studio / llama.cpp / vLLM), and an optional, triple-gated external
