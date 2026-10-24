@@ -1,4 +1,6 @@
-# Extends the default ruleset; allowlists only exact, public test fixtures.
+# Extends the default ruleset. Allowlists are public non-secrets only.
+# Each entry is condition AND (path and regex), so a different secret in the
+# same file is still reported.
 [extend]
 useDefault = true
 
@@ -8,3 +10,10 @@ condition = "AND"
 regexTarget = "match"
 regexes = ['''AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsawQ''']
 paths = ['''crates/cg-core/src/sanitizer\.rs''']
+
+[[allowlists]]
+description = "SHA-256 of a screenshot PNG recorded under docs/screenshots, not a credential"
+condition = "AND"
+regexTarget = "line"
+regexes = ['''(?i)"[^"\\]+\.png"\s*:\s*"[0-9a-f]{64}"''']
+paths = ['''docs/screenshots/''']
