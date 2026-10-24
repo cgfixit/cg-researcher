@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `cg-researcher` (formerly `cg-agent`): a local-first research assistant in Rust. RAG over a notes corpus, a loopback OpenAI-compatible model (Ollama / LM Studio / llama.cpp / vLLM), and an optional, triple-gated external model (Claude / Grok). macOS 14+ is the product target; Linux builds and passes tests but is best-effort (no Keychain, no launchd, installer refuses to run).
 
-The default branch is `origin/main` (a branch literally named that; `cg/main` and `main` do not exist). The workflows in `.github/` and `dependabot.yml` still target `cg/main`, so CI does not run on pushes to the default branch until they are repointed.
+The default branch is `main`. CI, Dependabot and the workflows in `.github/` target it.
 
 ## Commands
 
