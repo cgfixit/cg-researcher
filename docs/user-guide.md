@@ -58,7 +58,7 @@ to answer anyway locally, use the external model (if enabled), or stop.
 3. Consent per query (CLI `y`, UI "External", `/ext`).
 
 `external.model` must belong to `external.provider` (`claude-*` for anthropic, `grok-*` for xai) or be
-empty for the provider default. A mismatch is refused at load, by `config set` and by the UI (HTTP 400),
+empty for the provider default. A mismatch is refused when `cg.toml` loads and by the UI (HTTP 400),
 so a provider switch can't silently keep the other vendor's model id.
 
 Rules (`[external.rules]`) ship closed: no local context, attachments or images leave the machine.
