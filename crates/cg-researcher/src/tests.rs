@@ -551,3 +551,39 @@ async fn reindex_needs_auth_and_live_swaps_the_index() {
     assert_eq!(g.last().and_then(|x| x.as_str()), Some("audit_logger"));
     assert_eq!(st["graph_edges"].as_array().expect("edges").len(), g.len());
 }
+
+#[tokio::test]
+async fn settings_refuse_a_model_id_from_the_other_provider() {
+    let (s, d) = state(60).await;
+    let app = router(s.clone(), 8192);
+    for bad in [
+        r#"{"set":{"external.provider":"xai","external.model":"claude-sonnet-5-5"}}"#,
+        r#"{"set":{"external.model":"grok-4.7"}}"#,
+        r#"{"set":{"external.provider":"anthropic","external.model":"gpt-5"}}"#,
+    ] {
+        let r = app
+            .clone()
+            .oneshot(post("/api/settings", Some(&bearer()), bad))
+            .await
+            .expect("resp");
+        assert_eq!(r.status(), StatusCode::BAD_REQUEST, "{bad}");
+        let v = body_json(r).await;
+        assert!(
+            v["error"].as_str().unwrap_or("").contains("external.model"),
+            "{v}"
+        );
+    }
+    // Nothing was applied or persisted.
+    let cfg = crate::runtime::current(&s.slot).await.config().clone();
+    assert_eq!(
+        cfg.external.provider,
+        cg_core::external::Provider::Anthropic
+    );
+    assert!(cfg.external.model.is_empty());
+    assert!(
+        !d.path().join("ui-settings.toml").exists() || {
+            let t = std::fs::read_to_string(d.path().join("ui-settings.toml")).expect("overlay");
+            !t.contains("claude-sonnet") && !t.contains("grok") && !t.contains("gpt-5")
+        }
+    );
+}

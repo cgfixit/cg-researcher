@@ -353,6 +353,11 @@ impl Config {
                 "{k} has unexpected characters"
             );
         }
+        // After the charset check, so the id is safe to echo in the error.
+        self.external
+            .provider
+            .check_model(&self.external.model)
+            .map_err(|e| anyhow::anyhow!(e))?;
         if self.rag.chunk_overlap >= self.rag.chunk_chars {
             anyhow::bail!("rag.chunk_overlap must be smaller than rag.chunk_chars");
         }
@@ -398,6 +403,22 @@ mod tests {
         let r = &c.external.rules;
         assert!(!r.send_local_context && !r.allow_telegram && !r.allow_images);
         assert!(!r.allow_attachment_text);
+    }
+
+    #[test]
+    fn external_model_must_match_provider() {
+        assert!(Config::from_toml("[external]\nprovider = \"xai\"\nmodel = \"grok-4.7\"").is_ok());
+        assert!(
+            Config::from_toml("[external]\nprovider = \"xai\"").is_ok(),
+            "empty = default"
+        );
+        let e = Config::from_toml("[external]\nprovider = \"xai\"\nmodel = \"claude-sonnet-5-5\"")
+            .expect_err("mismatch");
+        assert!(e.to_string().contains("belongs to Anthropic Claude"), "{e}");
+        assert!(
+            Config::from_toml("[external]\nmodel = \"grok-4.7\"").is_err(),
+            "default provider is anthropic"
+        );
     }
 
     #[test]

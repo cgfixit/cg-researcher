@@ -13,7 +13,7 @@ exists, no code. "Verified" says where it has actually run: `L` = Linux sandbox 
 | RAG | Live reload of a rebuilt index in a running server | done | L |
 | RAG | Corpus .md .txt .docx (zip-bomb limits) | done | L |
 | Chat | Attachments .png (re-encoded, metadata stripped) .docx .md .txt | done | L |
-| External | Anthropic Claude / xAI Grok, triple-gated, no tools, rules + budgets | done | L (mock) |
+| External | Anthropic Claude / xAI Grok, triple-gated, no tools, rules + budgets, model id must match provider | done | L (mock) |
 | UI | Loopback web UI, pairing code, strict CSP, settings whitelist, in-browser reindex, mobile layout | done | L (headless Chromium) |
 | Audit | Protobuf HMAC-chained log, signed head, cross-process lock | done | L |
 | Connectors | Web search: SerpAPI, opt-in public Google | done | L (mock) |

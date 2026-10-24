@@ -48,7 +48,7 @@ max_tool_output_chars = 12000
 # web UI (`cg-researcher ui`); autotune runs on every switch.
 enabled = false
 provider = "anthropic"    # anthropic | xai
-model = ""                # empty = provider default (claude-sonnet-5-5 / grok-4.7)
+model = ""                # empty = provider default (claude-sonnet-5-5 / grok-4.7); must be claude-* for anthropic, grok-* for xai
 anthropic_key_ref = "keychain:cg-researcher/anthropic_api_key"
 xai_key_ref = "keychain:cg-researcher/xai_api_key"
 xai_region = "global"     # global (api.x.ai) | us (us.api.x.ai)
