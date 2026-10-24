@@ -30,8 +30,8 @@ Only what `CLAUDE.md` and `INVARIANTS.md` do not already say: the "looks green f
 
 ## 4. GitHub Actions on this account has not run the macOS matrix
 
-- **Symptom:** A PR shows no checks, or checks never start, and the README says the macOS CI is "written but not executed".
-- **Wrong fix:** Assume green, or claim the installer and Keychain code are CI-verified.
+- **Symptom:** Every check on a PR fails within the same two seconds of being created, the job shows `runner_id: 0`, and the log download returns 404. Nothing ran; this is the account-level Actions block (billing), not thirteen simultaneous real failures.
+- **Wrong fix:** Assume green, start "fixing" the red checks, or claim the installer and Keychain code are CI-verified.
 - **Right fix:** Say so in the PR body and in any status text. Anything in `install.sh`, `keychain.rs`, the launchd plists, `bundle-app.sh` or `packaging/` is unverified until a Mac or the macOS runner runs it. Linux verification does not transfer.
 - **Evidence:** README "Status"; `CLAUDE.md` installer note.
 
@@ -67,6 +67,19 @@ Only what `CLAUDE.md` and `INVARIANTS.md` do not already say: the "looks green f
 - **Wrong fix:** Add a version to the crate manifest, or hand-edit `Cargo.lock`.
 - **Right fix:** Versions live only in `[workspace.dependencies]` in the root `Cargo.toml`; crates say `name.workspace = true` and add features. After a deliberate bump, `cargo update -p <crate>` regenerates the lock; then `cargo deny`, and keep `fuzz/Cargo.lock` on the same versions.
 - **Evidence:** root `Cargo.toml`; `verify` skill step 3.
+
+## 9b. `rust-toolchain.toml` wins over the nightly you installed for fuzzing
+
+- **Symptom:** In CI, `cargo fuzz` fails with "the option `Z` is only accepted on the nightly compiler" even though the job installed `nightly-2026-10-15`.
+- **Wrong fix:** Remove the stable pin, or run `rustup default nightly` on the runner.
+- **Right fix:** The pin applies to every `cargo` invocation in the tree; rustup picks it over the installed nightly. `fuzz.yml` sets `RUSTUP_TOOLCHAIN: nightly-2026-10-15` as a job env. Locally, `cargo +nightly fuzz run <target>` does the same per command.
+- **Evidence:** `.github/workflows/fuzz.yml` job env (PR #9).
+
+## 9c. `scripts/lint.sh` exits 0 with linters missing, except under `CI`
+
+- **Symptom:** "lint: ok" on a box without `shellcheck` or `actionlint`; the same tree fails CI's `lint` job.
+- **Right fix:** Read the `skip:` lines. A skipped linter is unverified, not passed. `brew install shellcheck actionlint zizmor` on a Mac; the sandbox has none of them.
+- **Evidence:** `need()` in `scripts/lint.sh`; `.github/workflows/lint.yml` installs sha256-verified arm64 binaries.
 
 ## 10. The test count is 131 plus one ignored
 

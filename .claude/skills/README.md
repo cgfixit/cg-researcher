@@ -6,7 +6,7 @@ Truth order when a skill and a document disagree: code > `config/cg.toml` > `INV
 
 | skill | use it when | writes to the tree |
 |---|---|---|
-| [`verify/`](verify/SKILL.md) | before any commit or PR: fmt, clippy `-D warnings`, shellcheck, `cargo deny`, then `init` / `selftest` / `audit verify` in a throwaway home | no |
+| [`verify/`](verify/SKILL.md) | before any commit or PR: `scripts/lint.sh` (hygiene, fmt, clippy `-D warnings`, shellcheck, actionlint), `cargo deny`, then `init` / `selftest` / `audit verify` in a throwaway home | no |
 | [`invariants-check/`](invariants-check/SKILL.md) | the diff touches the graph, gates, audit log, sanitizer, HTTP/UI guard, external-model code, connectors or Cargo dependencies; maps files to I1-I8 and names the test for each | no (may add a test) |
 | [`config-guard/`](config-guard/SKILL.md) | `config/cg.toml`, `config.rs` or `settings.rs` changed; asserts the shipped defaults are still fail-closed (offline, external off, connectors off, loopback, quoted booleans refused, overlay whitelist) | no |
 | [`run-cg-researcher/`](run-cg-researcher/SKILL.md) | you need the real binary running: mock model, throwaway home, `serve`, `/query`, UI pairing, Playwright, audit verify | no (throwaway `--home` only) |
