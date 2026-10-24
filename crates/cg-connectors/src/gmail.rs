@@ -202,9 +202,8 @@ impl Tool for GmailTool {
         let body = args["body"].as_str().unwrap_or("");
         match self.1 {
             Op::Draft | Op::Send => cg_core::sanitizer::redact(&format!(
-                "{} to {to}\nsubject: {subj}\n---\n{}",
-                self.spec().name,
-                clip(body, 1500)
+                "{} to {to}\nsubject: {subj}\n---\n{body}",
+                self.spec().name
             )),
             _ => format!(
                 "{}({})",
@@ -296,6 +295,31 @@ impl Tool for GmailTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn write_confirmation_includes_the_entire_body() {
+        let auth = Arc::new(GoogleAuth::new(
+            crate::common::mock::loopback_egress(),
+            String::new(),
+            cg_core::secrets::Secret::minted("client-id".into()),
+            cg_core::secrets::Secret::minted("client-secret".into()),
+            cg_core::secrets::Secret::minted("refresh-token".into()),
+        ));
+        let gmail = Arc::new(Gmail {
+            auth,
+            egress: crate::common::mock::loopback_egress(),
+            api: API.into(),
+            max: 10,
+        });
+        let body = "ordinary text ".repeat(1400) + "BODY-TAIL-MUST-BE-VISIBLE";
+        let args = json!({"to":"recipient@example.com", "subject":"Review", "body":body});
+        for op in [Op::Draft, Op::Send] {
+            let preview = GmailTool(gmail.clone(), op).describe(&args);
+            assert!(preview.contains(&body));
+            assert!(preview.contains("recipient@example.com"));
+            assert!(preview.contains("subject: Review"));
+        }
+    }
 
     #[test]
     fn header_injection_refused() {
