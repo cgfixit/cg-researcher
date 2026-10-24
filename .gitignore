@@ -1,0 +1,6 @@
+/target
+*.pb
+*.key
+.env
+.env.*
+/dist

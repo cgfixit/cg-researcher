@@ -1,0 +1,38 @@
+[package]
+name = "cg-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+anyhow = "1.0.104"
+async-trait = "0.1.92"
+base64 = "0.23.1"
+getrandom = "0.4.3"
+hex = "0.4.3"
+hmac = "0.13.0"
+quick-xml = "0.42.0"
+regex = "1.13.1"
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json", "query"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "process", "time", "sync", "io-util", "fs"] }
+toml = "1.1.8"
+tracing = "0.1.44"
+url = "2.5.8"
+cg-audit = { version = "0.1.0", path = "../cg-audit" }
+cg-graph = { version = "0.1.0", path = "../cg-graph" }
+zip = { version = "9.0.5", default-features = false, features = ["deflate"] }
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"
+
+[lints]
+workspace = true

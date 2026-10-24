@@ -1,0 +1,111 @@
+# cg-agent configuration. Copied to ~/.cg-agent/cg.toml by `cg-agent init`.
+# Secret references (never inline values):
+#   env:NAME            environment variable
+#   op://vault/item/f   1Password CLI (`op read`)
+#   keychain:svc/acct   macOS Keychain (`security find-generic-password`)
+#   file:name           ~/.cg-agent/secrets/name (0600)
+# Unknown keys are rejected; quoted booleans ("true") are rejected.
+
+[app]
+mode = "offline"          # offline | hybrid  (hybrid is gate 1 of 3 for the external model)
+home = ""                 # empty = ~/.cg-agent (or $CG_HOME)
+
+[llm]
+provider = "ollama"       # label only: ollama | lmstudio | llamacpp | mlx | vllm | openai-compatible
+base_url = "http://127.0.0.1:11434/v1"   # LM Studio :1234/v1, llama-server :8080/v1, mlx_lm.server :8080/v1
+model = "qwen3:8b"
+vision_model = ""         # e.g. "qwen2.5vl:7b"; empty = PNG attachments are not sent to the model
+embed_model = "all-minilm"
+api_key_ref = ""          # only if your local server wants a bearer key
+timeout_secs = 720
+max_tokens = 2048
+temperature = 0.2
+allow_non_loopback = false
+
+[rag]
+corpus_dir = ""           # empty = ~/.cg-agent/corpus  (.md .txt .docx; symlinks ignored)
+min_score = 0.028         # RRF scale, scaled by number of ranked lists
+min_semantic_score = 0.30
+top_k = 5
+chunk_chars = 900
+chunk_overlap = 120
+
+[agent]
+max_steps = 48
+max_tool_iterations = 8
+soul_file = ""            # optional read-only persona; scanned for injection on load
+max_input_chars = 4000
+
+[tools]
+auto_approve_writes = false      # even if true: never for tainted turns or remote origins
+remote_origins_read_only = true  # Telegram/SMS turns get read tools only
+max_tool_output_chars = 12000
+
+[external]
+enabled = false           # gate 2 of 3; gate 3 is per-query confirmation
+model = "grok-4"
+api_key_ref = "env:XAI_API_KEY"
+send_local_context = false
+
+[server]
+host = "127.0.0.1"
+port = 8797
+max_body_bytes = 16777216
+rate_limit_per_min = 60
+
+[attachments]
+max_bytes = 10485760
+max_text_chars = 60000
+max_image_side = 8192
+max_per_turn = 4
+
+# ---------------------------------------------------------------- connectors
+# Every connector ships disabled. Enabling one that needs an allowlist with an
+# empty allowlist is a startup error (fail loud), not "allow everyone".
+
+[connectors.web_search]
+enabled = false
+serpapi_key_ref = "env:SERPAPI_API_KEY"
+allow_public_google = false   # fallback only when SerpAPI is unconfigured/unreachable, never on key rejection
+max_results = 5
+
+[connectors.netconnect]
+enabled = false
+allowed_cidrs = []            # IPv4 only, must sit inside RFC1918 or 127/8, e.g. ["192.168.1.0/24"]
+include_connections = false   # macOS: add net_connections via bundled CyClaw-Net-Viewer (install.sh --with-netviewer)
+
+[connectors.telegram]
+enabled = false
+bot_token_ref = "env:TELEGRAM_BOT_TOKEN"
+allowed_user_ids = []         # numeric Telegram user IDs; private chats only
+allow_confirm = false         # allow confirming external-model egress from Telegram
+poll_secs = 30
+
+[connectors.gmail]
+enabled = false
+client_id_ref = "env:GOOGLE_CLIENT_ID"
+client_secret_ref = "env:GOOGLE_CLIENT_SECRET"
+refresh_token_ref = "file:google_refresh_token"
+max_results = 10
+
+[connectors.gcal]
+enabled = false
+client_id_ref = "env:GOOGLE_CLIENT_ID"
+client_secret_ref = "env:GOOGLE_CLIENT_SECRET"
+refresh_token_ref = "file:google_refresh_token"
+calendar_id = "primary"
+
+[connectors.onepassword]
+enabled = false               # metadata search only (title/vault/category/urls); never returns secret values
+vaults = []                   # optional vault allowlist; empty = all vaults the op session can see
+
+[connectors.sms]
+enabled = false
+provider = "twilio"
+account_sid_ref = "env:TWILIO_ACCOUNT_SID"
+auth_token_ref = "env:TWILIO_AUTH_TOKEN"
+from_number = ""              # your Twilio number, E.164
+allowed_numbers = []          # E.164, e.g. ["+14045550123"]
+require_pin = true            # sender IDs are spoofable; PIN is the real gate
+pin_ref = "file:sms_pin"
+poll_secs = 20
