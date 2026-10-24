@@ -36,6 +36,7 @@ done
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CG_HOME="${CG_HOME:-$HOME/.cg-researcher}"
+[[ "$CG_HOME" == /* ]] || CG_HOME="$PWD/$CG_HOME"
 bin_dir="$CG_HOME/bin"
 plist="$HOME/Library/LaunchAgents/$LABEL.plist"
 mplist="$HOME/Library/LaunchAgents/$MLABEL.plist"

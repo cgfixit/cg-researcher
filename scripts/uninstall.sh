@@ -15,6 +15,15 @@ done
 CG_HOME="${CG_HOME:-$HOME/.cg-researcher}"
 
 [[ "$(uname -s)" == "Darwin" ]] || { echo "cg-researcher's uninstaller targets macOS" >&2; exit 1; }
+# Resolve aliases before removing even the binaries or launchd jobs.
+if [[ -d "$CG_HOME" ]]; then
+  CG_HOME="$(cd -P -- "$CG_HOME" && pwd -P)"
+  user_home="$(cd -P -- "$HOME" && pwd -P)"
+  case "$CG_HOME" in /) echo "refusing to uninstall from /" >&2; exit 1 ;; esac
+  case "$user_home/" in
+    "$CG_HOME/"*) echo "refusing to uninstall from home or its ancestor: $CG_HOME" >&2; exit 1 ;;
+  esac
+fi
 LABEL="com.cgfixit.cg-researcher"
 for l in com.cgfixit.cg-agent com.cgfixit.cg-agent.maintenance "$LABEL" "$LABEL.maintenance"; do
   launchctl bootout "gui/$(id -u)/$l" 2>/dev/null || true
@@ -27,7 +36,6 @@ echo "removed service and binaries"
 
 if [[ "$purge" == 1 ]]; then
   [[ -d "$CG_HOME" ]] || { echo "nothing to purge"; exit 0; }
-  case "$CG_HOME" in /|"$HOME"|"") echo "refusing to purge $CG_HOME" >&2; exit 1 ;; esac
   if [[ "$yes" != 1 ]]; then
     read -r -p "Delete $CG_HOME and Keychain items (config, secrets, corpus, audit log)? type 'delete': " ans
     [[ "$ans" == "delete" ]] || { echo "kept $CG_HOME"; exit 0; }
