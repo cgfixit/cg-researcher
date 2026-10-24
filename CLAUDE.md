@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `cg-researcher` (formerly `cg-agent`): a local-first research assistant in Rust. RAG over a notes corpus, a loopback OpenAI-compatible model (Ollama / LM Studio / llama.cpp / vLLM), and an optional, triple-gated external model (Claude / Grok). The product target is Apple Silicon (arm64) on macOS 14+, including macOS 27 "Golden Gate" (Apple silicon only, last release with Rosetta). CI covers macOS 15 and `macos-latest` (macOS 26 today; it becomes 27 when GitHub flips the label). Intel is best-effort and only on macOS 26 or older. Linux builds and passes tests but is best-effort (no Keychain, no launchd, installer refuses to run).
 
-The default branch is `main`. CI, Dependabot and the workflows in `.github/` target it. PRs follow `.github/PULL_REQUEST_TEMPLATE.MD` (keep every section; base `main`, never stacked; agent branches use the driver prefix such as `claude/`, human branches `cg/` etc.; title `[prefix] - Sentence`). License: MIT (`LICENSE`, `license.workspace` in every crate).
+The default branch is `main`. CI, Dependabot and the workflows in `.github/` target it.
 
 ## Commands
 
@@ -19,7 +19,7 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 cargo test -p cg-core --locked <name>       # single test (substring match), e.g. `agent::tests::topology_`
 cargo test -p cg-core --locked keychain -- --ignored   # Keychain test (macOS only, needs a throwaway keychain)
-cargo run -p cg-researcher -- selftest      # runtime self-check; also: init, chat, serve, gateways, index, audit, google-auth, maintain, ui, app, netviewer
+cargo run -p cg-researcher -- selftest      # runtime self-check; also: chat, serve, index, audit verify, maintain
 cargo deny check advisories bans licenses sources   # what audit.yml runs; `bans` is the no-telemetry rule (deny.toml)
 cargo llvm-cov --workspace --locked --summary-only --fail-under-lines 70   # CI coverage floor
 ```
@@ -67,10 +67,10 @@ Repo skills in `.claude/skills/` (index in `.claude/skills/README.md`): `verify`
 Cargo workspace, five crates (`crates/*`):
 
 - **`cg-graph`**: small LangGraph-style `StateGraph` / `CompiledGraph` (nodes, routers, a single entry and a single sink). Generic; no policy.
-- **`cg-core`**: everything policy-bearing: `agent.rs` (builds the graph and all node logic), `config`, `rag` (SQLite FTS5 + embeddings), `llm` and `external` clients, `sanitizer` (injection scanning), `egress` (host-pinned HTTPS), `sandbox` (child-process env clearing), `secrets` / `keychain`, `settings` (UI overlay whitelist), `tune` (autotune), `attachments`, `tools`, `stream` (guarded token streaming: every delta is a prefix of the output-guarded text), `paths` (data-dir layout), `fsutil` (atomic owner-only writes). Agent tests live in `agent/tests.rs`.
+- **`cg-core`**: everything policy-bearing: `agent.rs` (builds the graph and all node logic), `config`, `rag` (SQLite FTS5 + embeddings), `llm` and `external` clients, `sanitizer` (injection scanning), `egress` (host-pinned HTTPS), `sandbox` (child-process env clearing), `secrets` / `keychain`, `settings` (UI overlay whitelist), `tune` (autotune), `attachments`, `tools`.
 - **`cg-audit`**: protobuf audit records (`proto/`, compiled in `build.rs`), HMAC-SHA256 chained, signed head, cross-process append lock. Queries and senders are stored only as keyed fingerprints.
 - **`cg-connectors`**: Telegram, SMS, Gmail, Gcal, web search, 1Password, netconnect. Exposed as trait objects behind the tool gate.
-- **`cg-researcher`**: the binary. `main.rs` (CLI), `runtime.rs` (`run_turn`), `serve.rs` (axum-style loopback API + embedded web UI from `crates/cg-researcher/ui/`), `chat.rs`, `tests.rs`; `examples/mock_llm.rs` is the deterministic mock model.
+- **`cg-researcher`**: the binary. `main.rs` (CLI), `runtime.rs` (`run_turn`), `serve.rs` (axum-style loopback API + embedded web UI from `ui/`), `chat.rs`, `tests.rs`.
 
 **The graph is the policy.** Every turn starts at `retrieve` and ends at `audit_logger`:
 
