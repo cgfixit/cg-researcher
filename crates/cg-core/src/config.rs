@@ -58,8 +58,8 @@ impl Default for LlmConfig {
         Self {
             provider: "ollama".into(),
             base_url: "http://127.0.0.1:11434/v1".into(),
-            model: "qwen3:8b".into(),
-            vision_model: String::new(),
+            model: "qwen3.8:27b-mlx-cg".into(),
+            vision_model: "gemma4-26b-a4b:ud-q4_k_xl-cg".into(),
             embed_model: "all-minilm".into(),
             api_key_ref: String::new(),
             timeout_secs: 720,
@@ -392,6 +392,18 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_local_models() {
+        let c = Config::from_toml("").expect("empty config");
+        assert_eq!(c.llm.model, "qwen3.8:27b-mlx-cg");
+        assert_eq!(c.llm.vision_model, "gemma4-26b-a4b:ud-q4_k_xl-cg");
+        assert_eq!(c.llm.base_url, "http://127.0.0.1:11434/v1");
+        assert!(!c.llm.allow_non_loopback);
+        let shipped = Config::from_toml(include_str!("../../../config/cg.toml")).expect("shipped");
+        assert_eq!(shipped.llm.model, c.llm.model);
+        assert_eq!(shipped.llm.vision_model, c.llm.vision_model);
+    }
 
     #[test]
     fn defaults_are_offline_and_loopback() {
