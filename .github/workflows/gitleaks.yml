@@ -3,7 +3,9 @@ on:
   push:
     branches: ["main"]
   pull_request:
-  # Weekly full-history rescan (new gitleaks rules can match old commits).
+  # Weekly full-history rescan of every branch and tag (new gitleaks rules
+  # can match old commits). workflow_dispatch uses that same full rescan.
+  # Push and pull_request scan only the event tip's history.
   schedule:
     - cron: "23 5 * * 1"
   workflow_dispatch:
@@ -17,11 +19,47 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 0
+          # fetch-depth 0 is every branch (`refs/heads/*`). `gitleaks git`
+          # then runs `git log --all`, so one open branch fails every PR.
+          fetch-depth: 1
+      - name: fetch history for this event
+        run: |
+          set -euo pipefail
+          # `git remote add` installs a catch-all heads refspec. Always pass
+          # an explicit refspec: `git fetch --unshallow origin` with none
+          # pulls every open branch.
+          fetch_ref() {
+            if [ -f .git/shallow ]; then
+              git fetch --prune --no-recurse-submodules --no-tags --unshallow origin "$@"
+            else
+              git fetch --prune --no-recurse-submodules --no-tags origin "$@"
+            fi
+          }
+          case "$GITHUB_EVENT_NAME" in
+            schedule|workflow_dispatch)
+              fetch_ref '+refs/heads/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*'
+              ;;
+            pull_request)
+              fetch_ref "+${GITHUB_REF}:refs/remotes/pull/${GITHUB_REF#refs/pull/}"
+              ;;
+            *)
+              fetch_ref "+${GITHUB_REF}:refs/remotes/origin/${GITHUB_REF#refs/heads/}"
+              ;;
+          esac
       - name: gitleaks 8.30.1 (sha256-verified binary, no third-party action)
         run: |
           set -euo pipefail
           curl -fsSL -o gl.tgz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
           echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gl.tgz" | sha256sum -c -
           tar xzf gl.tgz gitleaks
-          ./gitleaks git --redact --exit-code 1 .
+          case "$GITHUB_EVENT_NAME" in
+            schedule|workflow_dispatch)
+              ./gitleaks git --redact --exit-code 1 .
+              ;;
+            *)
+              # Same patch walk as the default scan (`--full-history` and
+              # `--diff-filter=tuxdb`) but from HEAD, not `--all`.
+              ./gitleaks git --redact --exit-code 1 \
+                --log-opts="--full-history --diff-filter=tuxdb HEAD" .
+              ;;
+          esac
