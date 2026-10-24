@@ -90,7 +90,7 @@ Only what `CLAUDE.md` and `INVARIANTS.md` do not already say: the "looks green f
 ## 11. Branch names and the default branch
 
 - **Symptom:** `git fetch origin main` says "couldn't find remote ref", or a local branch literally named `origin/main` shadows the remote-tracking ref and every `git` command does something surprising.
-- **Right fix:** The default branch is `main` now (it was `cg/main`). Never create a local branch whose name starts with `origin/`. After the remote is repaired, `git fetch --prune` and re-track. Push branches as `cg/<topic>`.
+- **Right fix:** The default branch is `main` now (it was `cg/main`). Never create a local branch whose name starts with `origin/`. After the remote is repaired, `git fetch --prune` and re-track. Push human branches as `cg/<topic>`; agent sessions use their driver prefix (`claude/`, `codex/`, ...) per `.github/PULL_REQUEST_TEMPLATE.MD`.
 - **Evidence:** `CLAUDE.md` default-branch line; `.github/workflows/*.yml` `branches: ["main"]`.
 
 ## 12. GitHub rejects pushes with a private email
