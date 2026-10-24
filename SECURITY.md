@@ -23,6 +23,8 @@ externally. cg-researcher enforces this in the graph, not in the prompt:
   approve the external model.
 - With the shipped settings, writes (`gmail_send`, `gmail_create_draft`, `gcal_create_event`) need a human "yes"
   that shows the full recipient, subject and body. The HTTP API cannot give that yes.
+  Gmail confirmations display the complete bounded body (up to 20,000 characters), with
+  secret redaction retained; no undisplayed body tail is sent after approval.
 - Model output is filtered: markdown images are removed and links with query strings are cut
   to their host, which closes the classic exfiltration channel.
 
