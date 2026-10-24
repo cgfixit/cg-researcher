@@ -25,6 +25,10 @@ jobs:
   fuzz:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # rust-toolchain.toml pins stable for the workspace; rustup would pick it
+      # over the nightly installed below, and cargo-fuzz's -Z flags need nightly.
+      RUSTUP_TOOLCHAIN: nightly-2026-10-15
     strategy:
       fail-fast: false
       matrix:
