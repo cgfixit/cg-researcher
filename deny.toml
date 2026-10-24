@@ -14,6 +14,10 @@ confidence-threshold = 0.9
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# Workspace members are path deps without a version (`cg-core.workspace = true`). Every
+# member is `publish = false`, so cargo-deny treats them as private and this exempts only
+# those path deps; registry wildcards stay denied, and [sources] still denies unknown git.
+allow-wildcard-paths = true
 # Telemetry / remote-reporting SDKs are banned outright (I2).
 deny = [
   { name = "opentelemetry" },
