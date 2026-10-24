@@ -132,8 +132,8 @@ UI changes: cargo build --locked -p cg-researcher --bins --examples; then in e2e
   npx playwright test
 Record Chromium/WebKit results; WebKit is not native Safari/macOS verification.
 Coverage: existing coverage.yml enforces 70% lines; record result and tested SHA.
-Parser/guard changes: existing fuzz.yml targets attachments and sanitizer; record
-both targets, duration, seeds/artifacts, and crash results. A bounded run is not
+Parser/guard changes: existing fuzz.yml targets attachments, sanitizer and stream;
+record each target, duration, seeds/artifacts, and crash results. A bounded run is not
 proof that no bugs exist. Do not claim these jobs executed from their YAML alone. -->
 ## macOS Apple Silicon / release
 <!-- Write N/A + reason if packaging/runtime/install behavior is untouched.
