@@ -45,7 +45,7 @@ Only what `CLAUDE.md` and `INVARIANTS.md` do not already say: the "looks green f
 ## 6. The Intel tarball has a sunset date, not a removal
 
 - **Symptom:** The `universal` release job prints a warning about the Intel sunset and someone deletes the job early, or ignores it after the date.
-- **Right fix:** The warning fires from `INTEL_SUNSET` in `release.yml` (2027-08-27). Before that date, leave the job; after it, remove the `universal` job and the README line about the universal tarball in one change.
+- **Right fix:** The warning fires from `INTEL_SUNSET` in `release.yml` (read the date there). Before that date, leave the job; after it, remove the `universal` job and the README line about the universal tarball in one change.
 - **Evidence:** `.github/workflows/release.yml`, step "Intel artifact sunset check".
 
 ## 7. `cargo metadata --locked` prints the whole graph on success
@@ -70,10 +70,10 @@ Only what `CLAUDE.md` and `INVARIANTS.md` do not already say: the "looks green f
 
 ## 9b. `rust-toolchain.toml` wins over the nightly you installed for fuzzing
 
-- **Symptom:** In CI, `cargo fuzz` fails with "the option `Z` is only accepted on the nightly compiler" even though the job installed `nightly-2026-10-15`.
+- **Symptom:** In CI, `cargo fuzz` fails with "the option `Z` is only accepted on the nightly compiler" even though the job installed a nightly.
 - **Wrong fix:** Remove the stable pin, or run `rustup default nightly` on the runner.
-- **Right fix:** The pin applies to every `cargo` invocation in the tree; rustup picks it over the installed nightly. `fuzz.yml` sets `RUSTUP_TOOLCHAIN: nightly-2026-10-15` as a job env. Locally, `cargo +nightly fuzz run <target>` does the same per command.
-- **Evidence:** `.github/workflows/fuzz.yml` job env (PR #9).
+- **Right fix:** The pin applies to every `cargo` invocation in the tree; rustup picks it over the installed nightly. `fuzz.yml` sets `RUSTUP_TOOLCHAIN` to its pinned nightly as a job env (read the date there, not here). Locally, `cargo +nightly fuzz run <target>` does the same per command.
+- **Evidence:** `.github/workflows/fuzz.yml` job env .
 
 ## 9c. `scripts/lint.sh` exits 0 with linters missing, except under `CI`
 
