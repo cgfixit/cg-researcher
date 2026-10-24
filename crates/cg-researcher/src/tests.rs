@@ -510,3 +510,44 @@ fn app_bundle_detection_is_exact() {
         "/x.app/MacOS/cg-researcher"
     )));
 }
+
+#[tokio::test]
+async fn reindex_needs_auth_and_live_swaps_the_index() {
+    let (s, d) = state(60).await;
+    let corpus = d.path().join("corpus");
+    std::fs::create_dir_all(&corpus).expect("corpus");
+    std::fs::write(
+        corpus.join("n.md"),
+        "# Notes\nImmutable repositories resist ransomware.\n",
+    )
+    .expect("w");
+    let r = router(s.clone(), 4096)
+        .oneshot(post("/api/reindex", None, "{}"))
+        .await
+        .expect("r");
+    assert_eq!(r.status(), StatusCode::UNAUTHORIZED);
+    let r = router(s.clone(), 4096)
+        .oneshot(post("/api/reindex", Some(&bearer()), "{}"))
+        .await
+        .expect("r");
+    assert_eq!(r.status(), StatusCode::OK);
+    let v = body_json(r).await;
+    assert_eq!(v["files"], 1);
+    assert!(v["chunks"].as_u64().expect("chunks") >= 1);
+    let st = body_json(
+        router(s.clone(), 4096)
+            .oneshot(get("/api/status", Some(&bearer())))
+            .await
+            .expect("st"),
+    )
+    .await;
+    assert_eq!(
+        st["indexed_chunks"], v["chunks"],
+        "running agent sees the new index"
+    );
+    assert!(st["corpus_dir"].as_str().expect("dir").ends_with("corpus"));
+    let g = st["graph"].as_array().expect("graph");
+    assert_eq!(g.first().and_then(|x| x.as_str()), Some("retrieve"));
+    assert_eq!(g.last().and_then(|x| x.as_str()), Some("audit_logger"));
+    assert_eq!(st["graph_edges"].as_array().expect("edges").len(), g.len());
+}
