@@ -515,6 +515,46 @@ async fn auto_approve_never_applies_to_tainted_turns() {
 }
 
 #[tokio::test]
+async fn auto_approve_never_applies_to_http_or_corpus_turns() {
+    for (origin, corpus, expected) in [
+        (Origin::Http, false, 0),
+        (Origin::Cli, true, 0),
+        (Origin::Cli, false, 1),
+    ] {
+        let h = harness(
+            vec![tool_reply("gmail_send", json!({})), text_reply("ok")],
+            |c| c.tools.auto_approve_writes = true,
+        )
+        .await;
+        if corpus {
+            *h.agent.deps.retriever.write().expect("w") =
+                Arc::new(Retriever::new(vec![crate::rag::Chunk {
+                    id: 1,
+                    source: "notes.md".into(),
+                    text: "corpus approval marker".into(),
+                    embedding: None,
+                }]));
+        }
+        let r = h
+            .agent
+            .run(req("corpus approval marker", origin, Arc::new(DenyAll)))
+            .await;
+        assert_eq!(
+            h.sent.load(Ordering::SeqCst),
+            expected,
+            "{origin:?} corpus={corpus}"
+        );
+        assert_eq!(r.tainted, corpus);
+        assert_eq!(
+            r.tools[0].1,
+            if expected == 0 { "declined" } else { "allowed" }
+        );
+        assert!(r.path.last().is_some_and(|n| *n == "audit_logger"));
+        h.agent.deps.audit.verify_now().expect("audit chain");
+    }
+}
+
+#[tokio::test]
 async fn remote_origins_are_never_offered_write_tools() {
     let h = harness(
         vec![tool_reply("gmail_send", json!({})), text_reply("ok")],

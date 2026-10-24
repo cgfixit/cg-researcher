@@ -14,6 +14,7 @@ cargo-fuzz = true
 base64 = "0.23.1"
 libfuzzer-sys = "0.4.13"
 cg-core = { path = "../crates/cg-core" }
+tokio = { version = "1.54.1", default-features = false, features = ["sync"] }
 
 # Keep this crate out of the main workspace.
 [workspace]
@@ -22,6 +23,13 @@ members = ["."]
 [[bin]]
 name = "attachments"
 path = "fuzz_targets/attachments.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "stream"
+path = "fuzz_targets/stream.rs"
 test = false
 doc = false
 bench = false

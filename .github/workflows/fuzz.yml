@@ -1,16 +1,19 @@
 name: fuzz
 # Coverage-guided fuzzing (cargo-fuzz / libFuzzer) of the parsers that take
-# untrusted input: chat attachments (PNG / DOCX / Markdown / text) and the
+# untrusted input: chat attachments (PNG / DOCX / Markdown / text), the
 # input/output guards (injection scan, untrusted wrapper, link defang,
-# redaction). Targets assert security properties, not just "no panic";
-# see fuzz/fuzz_targets/*.rs. PRs touching those files: 2 min per target.
-# Weekly: 15 min per target. Crash inputs are uploaded as artifacts.
+# redaction), and streamed answers (SSE parser + per-chunk output guard).
+# Targets assert security properties, not just "no panic"; see
+# fuzz/fuzz_targets/*.rs (and fuzz/<target>.dict where present). PRs touching
+# those files: 2 min per target. Weekly: 15 min per target. Crash inputs are uploaded as artifacts.
 on:
   pull_request:
     paths:
       - "crates/cg-core/src/attachments.rs"
       - "crates/cg-core/src/sanitizer.rs"
       - "crates/cg-core/src/secrets.rs"
+      - "crates/cg-core/src/stream.rs"
+      - "crates/cg-core/src/llm.rs"
       - "fuzz/**"
       - ".github/workflows/fuzz.yml"
   schedule:
@@ -32,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [attachments, sanitizer]
+        target: [attachments, sanitizer, stream]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -48,7 +51,10 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
           SECS: ${{ github.event_name == 'schedule' && '900' || '120' }}
-        run: cargo fuzz run -O "$TARGET" -- -max_total_time="$SECS" -max_len=65536 -rss_limit_mb=2048 -timeout=10
+        run: |
+          dict=()
+          if [ -f "fuzz/$TARGET.dict" ]; then dict=("-dict=fuzz/$TARGET.dict"); fi
+          cargo fuzz run -O "$TARGET" -- "${dict[@]}" -max_total_time="$SECS" -max_len=65536 -rss_limit_mb=2048 -timeout=10
       - name: crash inputs
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
