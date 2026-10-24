@@ -26,6 +26,8 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "process", 
 toml.workspace = true
 tracing.workspace = true
 url.workspace = true
+# Mozilla roots for the external-model client; already in the lock via rustls-platform-verifier.
+webpki-root-certs.workspace = true
 cg-audit.workspace = true
 cg-graph.workspace = true
 zip = { workspace = true, features = ["deflate"] }
@@ -37,6 +39,8 @@ security-framework.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# egress TLS tests read the ClientHello from a loopback TcpListener.
+tokio = { workspace = true, features = ["net"] }
 
 [lints]
 workspace = true
