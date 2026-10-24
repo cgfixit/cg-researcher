@@ -587,3 +587,67 @@ async fn settings_refuse_a_model_id_from_the_other_provider() {
         }
     );
 }
+
+#[tokio::test]
+async fn query_stream_is_gated_and_ends_with_one_final_event() {
+    use http_body_util::BodyExt;
+    let (s, _d) = state(60).await;
+    let app = router(s, 4096);
+    let r = app
+        .clone()
+        .oneshot(post("/query/stream", None, r#"{"query":"hi"}"#))
+        .await
+        .expect("resp");
+    assert_eq!(r.status(), StatusCode::UNAUTHORIZED);
+    // Validation errors are plain JSON responses, not a half-open stream.
+    let r = app
+        .clone()
+        .oneshot(post(
+            "/query/stream",
+            Some(&bearer()),
+            r#"{"query":"hi","nope":1}"#,
+        ))
+        .await
+        .expect("resp");
+    assert_eq!(r.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        r.headers()["content-type"]
+            .to_str()
+            .expect("ct")
+            .starts_with("application/json")
+    );
+    let r = app
+        .clone()
+        .oneshot(post("/query/stream", Some(&bearer()), r#"{"query":"hi"}"#))
+        .await
+        .expect("resp");
+    assert_eq!(r.status(), StatusCode::OK);
+    let h = r.headers().clone();
+    assert!(
+        h["content-type"]
+            .to_str()
+            .expect("ct")
+            .starts_with("text/event-stream"),
+        "{h:?}"
+    );
+    assert!(
+        h.contains_key("content-security-policy"),
+        "security headers apply to SSE"
+    );
+    let bytes = tokio::time::timeout(std::time::Duration::from_secs(30), r.into_body().collect())
+        .await
+        .expect("stream ends")
+        .expect("body")
+        .to_bytes();
+    let text = String::from_utf8_lossy(&bytes);
+    assert_eq!(text.matches("event: final").count(), 1, "{text}");
+    let data = text
+        .split("event: final\n")
+        .nth(1)
+        .and_then(|t| t.lines().next())
+        .and_then(|l| l.strip_prefix("data: "))
+        .expect("final data");
+    let v: serde_json::Value = serde_json::from_str(data).expect("final json");
+    assert!(v["answer"].is_string() && v["path"].is_array(), "{v}");
+    assert!(!text.contains("event: error"), "{text}");
+}

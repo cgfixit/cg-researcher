@@ -320,6 +320,7 @@ dependencies = [
  "cg-connectors",
  "cg-core",
  "clap",
+ "futures-util",
  "getrandom 0.4.3",
  "hex",
  "http-body-util",
