@@ -8,7 +8,7 @@
 #   scripts/lint.sh --hygiene    only the tracked-file / .gitignore checks
 #
 # Sections: hygiene (no data dirs, logs, keys or .enc blobs tracked; .gitignore sane),
-# cargo fmt + clippy -D warnings, shellcheck, actionlint, zizmor (optional), plutil (macOS).
+# cargo fmt + clippy -D warnings, cargo deny (when installed), shellcheck, actionlint, zizmor (optional), plutil (macOS).
 # Missing linters are a hard failure under CI and a warning with the brew hint elsewhere.
 set -euo pipefail
 
@@ -81,6 +81,17 @@ cargo fmt --all --check || bad "cargo fmt --all --check"
 if [[ "$fast" == 0 ]]; then
   section "cargo clippy -D warnings"
   cargo clippy --workspace --all-targets --locked -- -D warnings || bad "clippy"
+fi
+
+# ---------------------------------------------------------------- supply chain
+# Same deny.toml audit.yml enforces. `bans` is the I2 no-telemetry gate; #13 passed this
+# script and still turned main red on it (path deps without a version vs wildcards = "deny").
+# advisories needs the online RustSec DB, so it stays in audit.yml only.
+section "cargo deny (bans licenses sources)"
+if command -v cargo-deny >/dev/null 2>&1; then
+  cargo deny --log-level error check bans licenses sources || bad "cargo deny check bans licenses sources (see deny.toml)"
+else
+  echo "skip: cargo-deny not installed (cargo install --locked cargo-deny; audit.yml runs it in CI)"
 fi
 
 # ---------------------------------------------------------------- shell
