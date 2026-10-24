@@ -1,7 +1,7 @@
 name: gitleaks
 on:
   push:
-    branches: ["cg/main"]
+    branches: ["main"]
   pull_request:
   # Weekly full-history rescan (new gitleaks rules can match old commits).
   schedule:

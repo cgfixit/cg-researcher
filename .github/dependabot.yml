@@ -2,7 +2,7 @@ version: 2
 updates:
   - package-ecosystem: cargo
     directory: /
-    target-branch: cg/main
+    target-branch: main
     schedule: { interval: weekly }
     cooldown: { default-days: 7 }
     open-pull-requests-limit: 5
@@ -11,18 +11,18 @@ updates:
         update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
-    target-branch: cg/main
+    target-branch: main
     schedule: { interval: weekly }
     cooldown: { default-days: 7 }
   - package-ecosystem: cargo
     directory: /fuzz
-    target-branch: cg/main
+    target-branch: main
     schedule: { interval: monthly }
     cooldown: { default-days: 7 }
     open-pull-requests-limit: 2
   - package-ecosystem: npm
     directory: /e2e
-    target-branch: cg/main
+    target-branch: main
     schedule: { interval: weekly }
     cooldown: { default-days: 7 }
     open-pull-requests-limit: 2
