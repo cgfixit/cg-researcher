@@ -13,7 +13,7 @@ out="$repo/dist"
 version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$repo/Cargo.toml" | head -1)"
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]] || { echo "bad version: $version" >&2; exit 1; }
 [[ -x "$bin" ]] || { echo "missing binary: $bin" >&2; exit 1; }
-lipo -verify_arch "$bin" arm64
+lipo "$bin" -verify_arch arm64
 app="$out/cg-researcher.app"
 rm -rf "$app" "$out/cg-researcher-macos-arm64.app.zip"*
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
