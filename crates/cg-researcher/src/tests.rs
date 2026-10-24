@@ -303,6 +303,40 @@ fn core_never_depends_on_connectors() {
 }
 
 #[test]
+fn every_child_process_goes_through_the_sandbox() {
+    // I2: the only place that may construct a process::Command is
+    // sandbox.rs; everything else calls clean_command / apply_clean_env.
+    fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for e in std::fs::read_dir(dir).expect("read_dir").flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(&p, out);
+            } else if p.extension().is_some_and(|x| x == "rs") {
+                out.push(p);
+            }
+        }
+    }
+    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let mut files = Vec::new();
+    walk(&crates, &mut files);
+    assert!(files.len() > 20, "walked the workspace sources");
+    for f in files {
+        let rel = f.strip_prefix(&crates).expect("rel").to_path_buf();
+        if rel.ends_with("cg-core/src/sandbox.rs") || rel.ends_with("tests.rs") {
+            continue;
+        }
+        let src = std::fs::read_to_string(&f).expect("read");
+        // Tests sit at the bottom of a file in this repo; ignore them.
+        let body = src.split("#[cfg(test)]").next().unwrap_or_default();
+        assert!(
+            !body.contains("Command::new("),
+            "{} spawns a process without sandbox::clean_command (I2)",
+            rel.display()
+        );
+    }
+}
+
+#[test]
 fn shipped_config_is_safe_by_default() {
     let cfg = cg_core::config::Config::from_toml(crate::DEFAULT_CONFIG).expect("parses");
     cfg.validate().expect("validates");

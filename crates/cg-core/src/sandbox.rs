@@ -19,21 +19,35 @@ pub const TELEMETRY_KILL: &[(&str, &str)] = &[
     ("OTEL_LOGS_EXPORTER", "none"),
     ("SCARF_NO_ANALYTICS", "true"),
     ("OLLAMA_NOPRUNE", "1"),
+    ("HOMEBREW_NO_ANALYTICS", "1"),
+    ("DOTNET_CLI_TELEMETRY_OPTOUT", "1"),
+    ("POWERSHELL_TELEMETRY_OPTOUT", "1"),
+    ("AZURE_CORE_COLLECT_TELEMETRY", "0"),
+    ("CHECKPOINT_DISABLE", "1"),
+    ("SAM_CLI_TELEMETRY", "0"),
+    ("STRIPE_CLI_TELEMETRY_OPTOUT", "1"),
+    ("VCPKG_DISABLE_METRICS", "1"),
+    ("NEXT_TELEMETRY_DISABLED", "1"),
+    ("NUXT_TELEMETRY_DISABLED", "1"),
+    ("GATSBY_TELEMETRY_DISABLED", "1"),
+    ("ASTRO_TELEMETRY_DISABLED", "1"),
+    ("TURBO_TELEMETRY_DISABLED", "1"),
 ];
 
 pub const SAFE_PATH: &str = "/usr/bin:/bin:/usr/sbin:/sbin";
 
-/// A command with a cleared environment plus an explicit pass-through list.
-pub fn clean_command(program: &Path, pass_through: &[&str]) -> Command {
-    let mut c = Command::new(program);
+/// Inherited variables a child may keep (the process still cannot see
+/// anything else: the env is cleared first).
+pub const INHERITED: &[&str] = &["HOME", "USER", "LANG", "TMPDIR", "SystemRoot"];
+
+/// The one definition of a child's environment: cleared, fixed `PATH`,
+/// [`INHERITED`] plus `pass_through` copied from our own env, kill switches
+/// set, stdin closed. Every spawn site uses this (or [`clean_command`]), so
+/// the policy cannot drift between call sites (I2).
+pub fn apply_clean_env(c: &mut std::process::Command, pass_through: &[&str]) {
     c.env_clear();
     c.env("PATH", SAFE_PATH);
-    for k in ["HOME", "USER", "LANG", "TMPDIR", "SystemRoot"] {
-        if let Ok(v) = std::env::var(k) {
-            c.env(k, v);
-        }
-    }
-    for k in pass_through {
+    for k in INHERITED.iter().chain(pass_through) {
         if let Ok(v) = std::env::var(k) {
             c.env(k, v);
         }
@@ -42,6 +56,12 @@ pub fn clean_command(program: &Path, pass_through: &[&str]) -> Command {
         c.env(k, v);
     }
     c.stdin(std::process::Stdio::null());
+}
+
+/// A command with a cleared environment plus an explicit pass-through list.
+pub fn clean_command(program: &Path, pass_through: &[&str]) -> Command {
+    let mut c = Command::new(program);
+    apply_clean_env(c.as_std_mut(), pass_through);
     c.kill_on_drop(true);
     c
 }
@@ -81,5 +101,38 @@ mod tests {
                 "{leaked} must not be passed through"
             );
         }
+    }
+
+    /// `get_envs()` only lists what we set explicitly, so the test above
+    /// would still pass without `env_clear()`. Run a real child and read
+    /// what it actually sees: nothing but the allowlist and the switches.
+    #[test]
+    fn a_real_child_sees_only_the_allowlist() {
+        let env_bin = Path::new("/usr/bin/env");
+        if !env_bin.is_file() {
+            eprintln!("skip: /usr/bin/env missing");
+            return;
+        }
+        let out = clean_command(env_bin, &["CG_TEST_PASS"])
+            .as_std_mut()
+            .output()
+            .expect("spawn env");
+        assert!(out.status.success());
+        let allowed: Vec<&str> = ["PATH", "CG_TEST_PASS"]
+            .into_iter()
+            .chain(INHERITED.iter().copied())
+            .chain(TELEMETRY_KILL.iter().map(|(k, _)| *k))
+            .collect();
+        let text = String::from_utf8_lossy(&out.stdout);
+        let seen: Vec<&str> = text
+            .lines()
+            .filter_map(|l| l.split_once('=').map(|(k, _)| k))
+            .collect();
+        assert!(!seen.is_empty());
+        for k in &seen {
+            assert!(allowed.contains(k), "child inherited {k}");
+        }
+        // cargo always sets these in the test env; a cleared child never sees them.
+        assert!(!seen.iter().any(|k| k.starts_with("CARGO")));
     }
 }

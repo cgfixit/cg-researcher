@@ -4,6 +4,8 @@ all-features = false
 [advisories]
 version = 2
 yanked = "deny"
+# Explicit so a future cargo-deny default change cannot silently drop the check.
+unmaintained = "all"
 ignore = []
 
 [licenses]
@@ -18,12 +20,43 @@ wildcards = "deny"
 # member is `publish = false`, so cargo-deny treats them as private and this exempts only
 # those path deps; registry wildcards stay denied, and [sources] still denies unknown git.
 allow-wildcard-paths = true
-# Telemetry / remote-reporting SDKs are banned outright (I2).
+# Telemetry / remote-reporting SDKs are banned outright (I2). cargo-deny matches
+# exact crate names (no globs), so every family member is listed; none is in the
+# lock today, this is the fence, not a cleanup.
 deny = [
+  # OpenTelemetry family
   { name = "opentelemetry" },
+  { name = "opentelemetry_sdk" },
   { name = "opentelemetry-otlp" },
+  { name = "opentelemetry-proto" },
+  { name = "opentelemetry-jaeger" },
+  { name = "opentelemetry-zipkin" },
+  { name = "opentelemetry-datadog" },
+  { name = "tracing-opentelemetry" },
+  # Error / crash reporters
   { name = "sentry" },
+  { name = "sentry-core" },
+  { name = "sentry-tracing" },
+  { name = "sentry-anyhow" },
+  { name = "sentry-log" },
+  { name = "sentry-panic" },
+  { name = "sentry-tower" },
+  { name = "bugsnag" },
+  { name = "rollbar" },
+  # Product analytics / metrics shippers
   { name = "posthog-rs" },
+  { name = "segment" },
+  { name = "libhoney-rust" },
+  { name = "datadog-apm" },
+  { name = "dogstatsd" },
+  { name = "cadence" },
+  { name = "statsd" },
+  { name = "tracing-loki" },
+  { name = "tracing-elastic-apm" },
+  # Phone-home update checkers
+  { name = "self_update" },
+  { name = "update-informer" },
+  # TLS must be rustls
   { name = "openssl-sys" },
   { name = "native-tls" },
 ]
