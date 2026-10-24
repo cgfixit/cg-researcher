@@ -38,7 +38,10 @@ The installer refuses to run from a Rosetta shell, so it never builds an x86_64 
 
 macOS Finder users can double-click `install.command` / `uninstall.command`. Tagged releases also
 publish a draft **Apple Silicon `cg-researcher.app`** (ad-hoc signed, not notarized) plus a universal
-CLI tarball; build the app locally with `scripts/bundle-app.sh`.
+CLI tarball; build the app locally with `scripts/bundle-app.sh`. Once a day (`release.yml`, 09:07
+Eastern) the same artifacts are cut as a `nightly-YYYYMMDD-<sha>` **prerelease** when the head of
+`main` carries no tag and nobody has run the release workflow for it; nightlies are unreviewed and
+never marked "Latest". A manual run of `release.yml` builds and uploads artifacts without publishing.
 `scripts/uninstall.sh` keeps your data; `--purge` deletes `~/.cg-researcher` after you type `delete`.
 
 ## Local models
@@ -179,6 +182,7 @@ The UI cannot change bind address, loopback rules, connectors or write approval.
 | actionlint + zizmor + shellcheck + `scripts/test-uninstall.py` | Mon 05:29 UTC | `.github/workflows/workflow-lint.yml` |
 | cargo-audit + cargo-deny | Mon 06:17 UTC | `.github/workflows/audit.yml` |
 | fuzz attachments + sanitizer + stream (15 min each) | Tue 04:47 UTC | `.github/workflows/fuzz.yml` |
+| nightly `.app` + CLI prerelease, only if `main` moved without a tag or a release run | daily 09:07 America/New_York (cron 13:07 and 14:07 UTC, the `gate` job keeps the 09:xx one) | `.github/workflows/release.yml` |
 
 On every PR and every push to `main`: `scripts/lint.sh` on an Apple Silicon runner (`lint.yml`: hygiene,
 fmt, clippy, cargo deny when installed, shellcheck, actionlint, plutil). On every PR: browser end-to-end tests of the web UI in Chromium and WebKit (`ui-e2e.yml`, against a
