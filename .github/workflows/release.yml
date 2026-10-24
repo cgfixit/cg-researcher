@@ -66,6 +66,16 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 60
     steps:
+      # Intel is going away: macOS 27 (Golden Gate) is Apple silicon only and the last release
+      # with Rosetta 2. Drop this job, `universal` in publish's needs, and the tarball in the
+      # `gh release create` list once Intel stops mattering. This step nags from the date below.
+      - name: Intel artifact sunset check
+        env:
+          INTEL_SUNSET: "2027-08-27"
+        run: |
+          if [[ ! "$(date -u +%F)" < "$INTEL_SUNSET" ]]; then
+            echo "::warning title=Intel artifact sunset::universal (x86_64) tarball is past its $INTEL_SUNSET sunset date; remove this job."
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
