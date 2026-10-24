@@ -30,4 +30,4 @@ exists, no code. "Verified" says where it has actually run: `L` = Linux sandbox 
 | macOS | launchd service + daily maintenance job | done | CI written |
 | macOS | install/uninstall `.sh` + `.command`, legacy `~/.cg-agent` migration | done | shellcheck |
 | macOS | Apple Silicon `.app` bundle, ad-hoc signed, draft release | done; not notarized | L (launch path), CI written |
-| Dropped | Long-term memory (waku semantic/episodic/procedural) | removed by request | — |
+| Dropped | Long-term memory (semantic/episodic/procedural) | removed by request | — |
