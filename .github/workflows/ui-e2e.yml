@@ -1,0 +1,54 @@
+name: ui-e2e
+# Browser end-to-end tests of the web UI: Chromium + WebKit (Safari's engine,
+# not Safari) against a real `cg-researcher serve` and the Rust mock model
+# (crates/cg-researcher/examples/mock_llm.rs). No model weights, no network
+# beyond the package and browser downloads. Linux runner: the UI is
+# OS-independent and a macOS minute costs ~10x.
+on:
+  push:
+    branches: ["cg/main"]
+    paths: ["crates/**", "e2e/**", "Cargo.lock", ".github/workflows/ui-e2e.yml"]
+  pull_request:
+    paths: ["crates/**", "e2e/**", "Cargo.lock", ".github/workflows/ui-e2e.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ui-e2e-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  CARGO_TERM_COLOR: always
+jobs:
+  playwright:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10
+        with:
+          toolchain: 1.99.1
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo build --locked -p cg-researcher --bins --examples
+      - name: install pinned Playwright (lockfile, no install scripts)
+        working-directory: e2e
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: browsers (Chromium headless shell + WebKit)
+        working-directory: e2e
+        run: npx playwright install --with-deps --only-shell chromium webkit
+      - name: run
+        working-directory: e2e
+        env:
+          CI: "true"
+          CG_E2E_HOME: ${{ runner.temp }}/cg-e2e-home
+        run: npx playwright test
+      - name: report on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7
