@@ -172,6 +172,7 @@ impl Agent {
                 cfg.external.provider,
                 cfg.external.xai_region == "us",
                 Duration::from_secs(cfg.external.timeout_secs),
+                cfg.external.tls_roots,
                 k,
                 test_external_base,
             )?)

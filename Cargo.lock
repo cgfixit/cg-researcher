@@ -297,6 +297,7 @@ dependencies = [
  "toml",
  "tracing",
  "url",
+ "webpki-root-certs",
  "zip",
 ]
 
