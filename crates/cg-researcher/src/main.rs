@@ -459,13 +459,23 @@ fn is_bundle_exe(p: &std::path::Path) -> bool {
     )
 }
 
+fn launcher_addr(host: &str, port: u16) -> anyhow::Result<std::net::SocketAddr> {
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+    let ip = match host.parse::<IpAddr>()? {
+        IpAddr::V4(ip) if ip.is_unspecified() => IpAddr::V4(Ipv4Addr::LOCALHOST),
+        IpAddr::V6(ip) if ip.is_unspecified() => IpAddr::V6(Ipv6Addr::LOCALHOST),
+        ip => ip,
+    };
+    Ok(SocketAddr::new(ip, port))
+}
+
 async fn app(home: PathBuf) -> anyhow::Result<()> {
     let layout = cg_core::paths::Layout::new(&home);
     if !layout.api_key().exists() {
         init(home.clone(), false)?;
     }
     let r = Runtime::load(home.clone())?;
-    let addr = std::net::SocketAddr::new(r.cfg.server.host.parse()?, r.cfg.server.port);
+    let addr = launcher_addr(&r.cfg.server.host, r.cfg.server.port)?;
     let up = || {
         std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(300)).is_ok()
     };
@@ -516,7 +526,7 @@ async fn ui(home: PathBuf, print: bool) -> anyhow::Result<()> {
     let r = Runtime::load(home)?;
     let key = std::fs::read_to_string(r.layout.api_key())
         .map_err(|_| anyhow::anyhow!("no API key; run `cg-researcher init`"))?;
-    let addr = std::net::SocketAddr::new(r.cfg.server.host.parse()?, r.cfg.server.port);
+    let addr = launcher_addr(&r.cfg.server.host, r.cfg.server.port)?;
     let base = format!("http://{addr}");
     let egress =
         cg_core::egress::Egress::new("ui-pair", &[], true, std::time::Duration::from_secs(5))?;
