@@ -10,7 +10,7 @@ The default branch is `main`. CI, Dependabot and the workflows in `.github/` tar
 
 ## Commands
 
-Toolchain is pinned in `rust-toolchain.toml` (1.99.1, edition 2024); rustup installs it automatically.
+Toolchain is pinned in `rust-toolchain.toml` (1.99.1, edition 2024, MSRV 1.90); rustup installs it automatically. Every external crate version is declared once in `[workspace.dependencies]` (root `Cargo.toml`); crate manifests inherit with `name.workspace = true` and add only `features`. Bump a version there, never in a crate, and keep `cargo metadata --locked` passing.
 
 ```bash
 ./init.sh                                   # full local gate + `cg-researcher init` into $CG_HOME
@@ -20,7 +20,7 @@ cargo test --workspace --locked
 cargo test -p cg-core --locked <name>       # single test (substring match), e.g. `agent::tests::topology_`
 cargo test -p cg-core --locked keychain -- --ignored   # Keychain test (macOS only, needs a throwaway keychain)
 cargo run -p cg-researcher -- selftest      # runtime self-check; also: chat, serve, index, audit verify, maintain
-cargo deny check bans                       # enforces the no-telemetry dependency bans (deny.toml)
+cargo deny check advisories bans licenses sources   # what audit.yml runs; `bans` is the no-telemetry rule (deny.toml)
 cargo llvm-cov --workspace --locked --summary-only --fail-under-lines 70   # CI coverage floor
 ```
 
@@ -60,7 +60,7 @@ Lints: `unsafe_code = "forbid"` workspace-wide; `clippy::unwrap_used` warns, `db
 
 `scripts/install.sh` needs Xcode CLT and a native arm64 rustup (it rejects Rosetta shells and Rust older than 1.90). Nothing in this sandbox can run it, so changes to it, Keychain code or the launchd plists are unverified until a Mac or the macOS CI runs them.
 
-Repo skills in `.claude/skills/`: `verify` (local gate, lint first), `invariants-check` (diff vs `INVARIANTS.md`), `optimizer` (measure-first perf and size work that must not weaken an invariant).
+Repo skills in `.claude/skills/` (index in `.claude/skills/README.md`): `verify` (local gate, lint first), `invariants-check` (diff vs `INVARIANTS.md`), `config-guard` (shipped `config/cg.toml` still fail-closed), `run-cg-researcher` (real binary against the mock model in a throwaway home), `optimizer` (measure-first perf and size work that must not weaken an invariant). `.claude/settings.json` pre-approves the `cargo` gate commands, the repo scripts and read-only `git`/`rg`; anything else prompts, so do not work around a prompt. Lint first, then run the changed code; the full suite is CI's job. Never comment `@codex review` on a PR without the operator's approval.
 
 ## Architecture
 
