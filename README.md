@@ -219,19 +219,58 @@ crates/cg-graph       StateGraph / conditional edges / bounded invoke
 crates/cg-audit       protobuf (prost + protox, no protoc) HMAC-SHA256 chained log
 crates/cg-core        config, policy graph, RAG, model clients, egress, sanitizer, secrets
 crates/cg-connectors  everything that talks to a third party
-crates/cg-researcher  the binary (clap, axum, embedded UI)
+crates/cg-researcher  the binary (clap, axum, embedded UI from crates/cg-researcher/ui)
+config/cg.toml        shipped defaults, copied by `init`; every gate closed
 packaging/macos       Info.plist for the .app bundle
+scripts/              install.sh, uninstall.sh, bundle-app.sh
+e2e/                  Playwright specs (Chromium + WebKit) against serve + the mock model
+fuzz/                 cargo-fuzz targets (attachments, sanitizer); own Cargo.lock, nightly only
+.claude/              Claude Code settings and repo skills (see Development)
 ```
+
+## Dependencies and toolchain
+
+| file | pins |
+|---|---|
+| `rust-toolchain.toml` | Rust **1.99.1** with `rustfmt` + `clippy` (rustup only; Homebrew `rust` ignores it) |
+| `Cargo.toml` | edition 2024, `rust-version = "1.90"` (MSRV, checked by CI), `resolver = "3"`; every external crate version lives once in `[workspace.dependencies]` and the crates inherit it with `name.workspace = true` plus their own `features` |
+| `Cargo.lock` | committed; everything runs `--locked` (CI, `init.sh`, `install.sh`) |
+| `deny.toml` | license allowlist, crates.io only, `wildcards = "deny"`, and the I2 bans (`opentelemetry*`, `sentry`, `posthog-rs`, `openssl-sys`, `native-tls`); `cargo deny check advisories bans licenses sources` is the CI command |
+| `fuzz/Cargo.toml` + `fuzz/Cargo.lock` | separate package (not a workspace member), `nightly-2026-10-15` in CI; its resolved versions match the workspace lock |
+| `e2e/package.json` + `package-lock.json` | `@playwright/test` 1.64.1 only; `npm ci --ignore-scripts` |
+| `.github/workflows/*.yml` | all actions pinned by SHA; the same `dtolnay/rust-toolchain` SHA and `1.99.1` everywhere, `1.90` for the MSRV job |
+
+HTTP is `reqwest` on rustls (no OpenSSL, no `native-tls`, enforced by `deny.toml`); SQLite is `rusqlite` with the bundled engine and FTS5; the audit log is `prost` with `protox`, so no `protoc` is needed; macOS Keychain goes through `security-framework` (macOS-only target dependency). Changing a version means editing the root `Cargo.toml` once, then `cargo metadata --locked` must still pass or the lock needs a deliberate `cargo update -p <crate>`.
+
+## Development
+
+`CLAUDE.md` is the contributor manual (commands, lints, architecture, the gate rules). `INVARIANTS.md` I1-I8
+lists each security rule with the test that fails if it breaks; a change to one needs a test and a `SECURITY.md` note.
+`.claude/skills/` holds the repo skills, usable from Claude Code as `/<name>` or as plain checklists:
+
+| skill | purpose |
+|---|---|
+| `verify` | the local gate: fmt, clippy `-D warnings`, shellcheck, `cargo deny`, then `init` / `selftest` / `audit verify` in a throwaway home |
+| `invariants-check` | maps a diff to I1-I8 and the tests that cover each |
+| `config-guard` | asserts `config/cg.toml` still ships fail-closed (offline, external off, connectors off, loopback, quoted booleans refused, UI overlay whitelist) |
+| `run-cg-researcher` | runs the real binary against the mock model: throwaway home, index, `serve`, `/query`, UI pairing, Playwright, audit verify |
+| `optimizer` | measure-first performance and size work that must not weaken a guard |
+
+Lint first, then run the code; the full suite is CI's job. The lints are strict: `unsafe_code = "forbid"`,
+`clippy::unwrap_used` warns under `-D warnings`, `dbg_macro` denies.
 
 ## Status
 
-Verified in this repo's sandbox on Linux x86_64. That covers 132 unit and mock-HTTP tests (graph, audit,
-connectors, external providers via a loopback mock, the UI/HTTP security surface), clippy `-D warnings`
-on 1.99.1, an MSRV 1.90 check, and an end-to-end smoke with `serve`, three concurrent `maintain` runs, UI
-pairing, a headless-browser pass over every tab, 12 Playwright UI tests (Chromium + WebKit), 60 s
-fuzz runs per target (~3.2M inputs, no crashes), 74% line coverage, and the `.app` launch path. **Not yet run on a Mac**: the macOS CI matrix
-(macos-15 / macos-latest, Keychain, launchd, installer) is written but GitHub Actions has not executed it
-on this account. Windows is unsupported. Real Anthropic/xAI/Telegram/Twilio/Google/SerpAPI accounts
-were not exercised.
+Verified in this repo's sandbox on Linux x86_64. That covers 131 unit and mock-HTTP tests (graph, audit,
+connectors, external providers via a loopback mock, the UI/HTTP security surface) plus one Keychain test
+that is `#[ignore]` off macOS, clippy `-D warnings` on 1.99.1, an MSRV 1.90 check, `cargo deny`
+(advisories, bans, licenses, sources), and an end-to-end smoke with the mock model: `init`, `index`,
+`selftest` (10-node graph), `serve`, `/query` with sources, the DNS-rebinding (421) and missing-bearer (401)
+refusals, UI pairing, `audit verify`. Earlier passes also covered three concurrent `maintain` runs, a
+headless-browser pass over every tab, the six Playwright specs in Chromium and WebKit, 60 s fuzz runs per
+target (~3.2M inputs, no crashes), 74% line coverage, and the `.app` launch path. **Not yet run on a Mac**:
+the macOS CI matrix (macos-15 / macos-latest, Keychain, launchd, installer) is written but GitHub Actions
+has not executed it on this account. Windows is unsupported. Real Anthropic/xAI/Telegram/Twilio/Google/SerpAPI
+accounts were not exercised.
 
 See [SECURITY.md](SECURITY.md) and [INVARIANTS.md](INVARIANTS.md).

@@ -19,7 +19,7 @@ Measure first. Do not change code on a guess, and do not quote a speedup you did
 - Build: `cargo build --release --locked -p cg-researcher` (thin LTO, one codegen unit, so it is the slowest CI job). Dependency count affects both build time and binary size; `cargo tree -p cg-researcher --duplicates` shows duplicate versions (`deny.toml` has `multiple-versions = "warn"`).
 
 ## Procedure
-1. State the target (latency, memory, size or build time) and capture a baseline in a scratch directory (a throwaway `--home`, a fixed corpus, the mock model `cargo run -p cg-researcher --example mock_llm` for repeatable runs).
+1. State the target (latency, memory, size or build time) and capture a baseline in a scratch directory (a throwaway `--home`, a fixed corpus, the mock model `cargo run -p cg-researcher --example mock_llm` for repeatable runs; `run-cg-researcher` has the full setup).
    - Size: `cargo build --release --locked -p cg-researcher && ls -l target/release/cg-researcher`
    - Time: `time` around `cg-researcher index` or a fixed `/query`; repeat at least 5 runs and report the spread.
    - Memory: `/usr/bin/time -l` on macOS (`-v` on Linux).

@@ -18,3 +18,5 @@ description: Check a change against INVARIANTS.md (I1-I8) before it is committed
 3. For each affected invariant, name the existing test that covers the change and run it by name, for example `cargo test -p cg-core --locked topology_`. If the change adds a code path the tests do not reach, add a test.
 4. A change that alters an invariant's wording or behavior needs a test and a `SECURITY.md` note (the file says so). Update the table row too.
 5. Output: one line per affected invariant, `I# held / changed / not covered`, plus the test that proves it. Call out anything you could not verify.
+
+If the diff also touches `config/cg.toml`, `config.rs` or `settings.rs`, run `config-guard` as well: it covers the shipped defaults that I3, I7 and I8 assume, which this skill does not re-check.

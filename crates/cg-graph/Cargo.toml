@@ -8,11 +8,11 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-futures = "0.3.34"
-thiserror = "2.0.21"
+futures.workspace = true
+thiserror.workspace = true
 
 [lints]
 workspace = true
 
 [dev-dependencies]
-futures = { version = "0.3.34", features = ["executor"] }
+futures = { workspace = true, features = ["executor"] }
