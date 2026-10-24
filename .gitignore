@@ -1,6 +1,123 @@
-/target
+# ---- build output ----
+# any cargo target dir (workspace root, fuzz/, a crate built standalone with --target-dir)
+target/
+/dist
+*.app/
+**/*.rs.bk
+*.tmp
+# coverage / profiling / perf scratch (cargo-llvm-cov, Instruments, flamegraph, perf, cargo-mutants)
+lcov.info
+summary.txt
+*.profraw
+*.profdata
+cargo-timing*.html
+*.dSYM/
+*.trace/
+perf.data*
+flamegraph.svg
+mutants.out*/
+# local model weights or embeddings someone drops next to the corpus
+*.gguf
+*.safetensors
+*.onnx
+
+# ---- runtime data: never commit a data directory, from ~/.cg-researcher or a --home ----
+.cg-researcher/
+.cg-agent/
+cg-home*/
+cgh/
+secrets/
+/state/
+/corpus/
+/index/
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+*.db
+# audit chain (keyed fingerprints, still private), its head and lock
 *.pb
+*.pb.head
+*.pb.lock
+sms_pin
+# a data dir rooted at the checkout (--home .) would drop its config here; the repo default is config/cg.toml
+/cg.toml
+# per-user UI overlay; the repo default is config/cg.toml
+ui-settings.toml
+
+# ---- logs ----
+*.log
+logs/
+npm-debug.log*
+
+# ---- key material, encrypted blobs, credentials ----
 *.key
+*.enc
+*.pem
+*.p12
+*.pfx
+*.der
+*.jks
+*.keystore
+*.gpg
+*.pgp
+*.mobileprovision
+*.provisionprofile
+*.keychain
+*.keychain-db
+*.token
+*.secret
+secrets.json
+secrets.toml
+secrets.yaml
+secrets.yml
+secrets.env
+id_rsa*
+id_ed25519*
+.netrc
 .env
 .env.*
-/dist
+!.env.example
+
+# ---- macOS ----
+.DS_Store
+._*
+.AppleDouble
+.LSOverride
+.Spotlight-V100
+.Trashes
+.fseventsd
+.TemporaryItems
+.DocumentRevisions-V100
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+Icon?
+
+# ---- editors / tooling ----
+.idea/
+.vscode/
+.zed/
+*.swp
+*.swo
+*~
+# Claude Code: personal overrides and local worktrees; .claude/skills/ stays tracked
+.claude/settings.local.json
+.claude/worktrees/
+CLAUDE.local.md
+.direnv/
+.envrc
+# local scanner output (the reviewed deliverables in security/ are tracked on purpose)
+gitleaks-report.*
+zizmor*.sarif
+cargo-audit*.json
+
+# ---- node (e2e) and fuzz also carry their own .gitignore ----
+node_modules/
+playwright-report/
+test-results/
+playwright/.cache/
+playwright/.auth/
+
+# ---- patch / merge debris ----
+*.orig
+*.rej
