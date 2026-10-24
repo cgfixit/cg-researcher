@@ -14,6 +14,8 @@
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 var(--font)}
 code,.mono{font-family:var(--mono);font-size:13px}
+code{white-space:nowrap}
+.chips li.none{white-space:normal}
 .bar{position:sticky;top:0;z-index:2;display:flex;gap:var(--gap);align-items:center;padding:10px 20px;
   background:var(--surface);border-bottom:1px solid var(--border)}
 .brand{display:flex;gap:8px;align-items:center;font-weight:600}
@@ -41,7 +43,7 @@ button.primary{background:var(--accent);border-color:var(--accent);color:var(--a
 button:disabled{opacity:.5;cursor:progress}
 .file{position:relative;flex-direction:row;color:var(--text);border:1px dashed var(--border);border-radius:6px;padding:7px 12px;cursor:pointer}
 .file input{position:absolute;inset:0;opacity:0;cursor:pointer}
-.log{display:flex;flex-direction:column;gap:12px;min-height:40vh;max-height:62vh;overflow:auto;padding:4px 2px 12px}
+.log{display:flex;flex-direction:column;gap:12px;min-height:30vh;max-height:calc(100dvh - 300px);overflow:auto;padding:4px 2px 12px}
 .msg{padding:12px 14px;border-radius:var(--r);background:var(--surface);border:1px solid var(--border);white-space:pre-wrap;overflow-wrap:anywhere}
 .msg.user{align-self:flex-end;background:var(--surface-2);max-width:80%}
 .msg.bot{max-width:92%}
@@ -49,7 +51,7 @@ button:disabled{opacity:.5;cursor:progress}
 .tag{padding:1px 6px;border-radius:4px;border:1px solid var(--border)}
 .tag.warn{border-color:var(--warn);color:var(--warn)}.tag.ext{border-color:var(--accent);color:var(--accent)}
 .confirm{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
-.composer{position:sticky;bottom:0;background:var(--bg);padding-top:8px}
+.composer{position:sticky;bottom:0;background:var(--bg);padding:8px 0 calc(8px + env(safe-area-inset-bottom))}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;gap:8px}
 .card.wide{grid-column:1/-1}
@@ -60,5 +62,39 @@ dt{color:var(--muted)}dd{margin:0;font-family:var(--mono);overflow-wrap:anywhere
 .chips li{font:12px var(--mono);padding:3px 8px;border:1px solid var(--border);border-radius:999px}
 .chips li.w{border-color:var(--warn);color:var(--warn)}
 .ok{color:var(--ok)}.bad{color:var(--danger)}
-@media (max-width:640px){.bar{flex-wrap:wrap;padding:10px 12px}main{padding:12px}.msg.user,.msg.bot{max-width:100%}}
+.skip{position:absolute;left:-999px;top:0;z-index:5;background:var(--accent);color:var(--accent-ink);padding:8px 12px;border-radius:0 0 6px 0}
+.skip:focus{left:0}
+body.locked .tabs,body.locked .pill{display:none}
+.small{font-size:12px}
+button.ghost{background:none;border-color:transparent;color:var(--muted)}
+button.ghost:hover{color:var(--text);border-color:var(--border)}
+button.small{padding:3px 8px}
+.chatbar{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13px;min-height:32px}
+.warn{color:var(--warn)}
+.empty{margin:auto;max-width:560px;text-align:center;padding:24px 8px}
+.empty h1{font-size:20px}
+.examples{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:14px}
+.examples .ex{font-size:13px;border-radius:999px;padding:6px 12px}
+.msg .body{white-space:pre-wrap}
+.msg.pending .body{color:var(--muted)}
+.msg.error{border-color:var(--danger)}.msg.error .body{color:var(--danger)}
+.actions{display:flex;gap:6px;margin-top:6px}
+.meta .chips li{font-size:11px;padding:1px 7px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+details.path summary{cursor:pointer}
+details.path span{display:block;margin-top:4px;overflow-wrap:anywhere}
+label.off{opacity:.55}
+.chips li.none{border-style:dashed;color:var(--muted)}
+.toolbar{margin:0 0 14px}
+.flow{margin:0;padding-left:22px;font:13px/1.7 var(--mono)}
+.flow .node{color:var(--text);font-weight:600}
+.files{font-size:13px}
+@media (max-width:640px){
+  .bar{flex-wrap:wrap;padding:8px 12px;gap:8px}
+  .tabs{order:3;flex-basis:100%;justify-content:space-between}
+  .tabs button{padding:6px 8px;flex:1}
+  main{padding:12px}.msg.user,.msg.bot{max-width:100%}
+  .composer .row{gap:8px}
+  .composer .send{margin-left:auto}
+  .log{max-height:calc(100dvh - 330px)}
+}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}

@@ -14,7 +14,7 @@ exists, no code. "Verified" says where it has actually run: `L` = Linux sandbox 
 | RAG | Corpus .md .txt .docx (zip-bomb limits) | done | L |
 | Chat | Attachments .png (re-encoded, metadata stripped) .docx .md .txt | done | L |
 | External | Anthropic Claude / xAI Grok, triple-gated, no tools, rules + budgets | done | L (mock) |
-| UI | Loopback web UI, pairing code, strict CSP, settings whitelist | done | L (headless Chromium) |
+| UI | Loopback web UI, pairing code, strict CSP, settings whitelist, in-browser reindex, mobile layout | done | L (headless Chromium) |
 | Audit | Protobuf HMAC-chained log, signed head, cross-process lock | done | L |
 | Connectors | Web search: SerpAPI, opt-in public Google | done | L (mock) |
 | Connectors | netconnect (ARP, RFC1918 allowlist) + Net-Viewer sockets | partial (macOS paths) | L |

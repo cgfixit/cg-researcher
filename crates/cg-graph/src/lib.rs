@@ -245,6 +245,25 @@ impl<S: Send + 'static> CompiledGraph<S> {
     pub fn node_names(&self) -> Vec<&'static str> {
         self.nodes.keys().copied().collect()
     }
+    /// Nodes in breadth-first order from the entry, sink last; for display.
+    pub fn flow_order(&self) -> Vec<&'static str> {
+        let mut out: Vec<&'static str> = Vec::with_capacity(self.nodes.len());
+        let mut queue = std::collections::VecDeque::from([self.entry]);
+        while let Some(n) = queue.pop_front() {
+            if n == self.sink || out.contains(&n) {
+                continue;
+            }
+            out.push(n);
+            queue.extend(self.successors(n));
+        }
+        for n in self.nodes.keys() {
+            if *n != self.sink && !out.contains(n) {
+                out.push(n);
+            }
+        }
+        out.push(self.sink);
+        out
+    }
     /// Declared successors of a node (for invariant tests).
     pub fn successors(&self, node: &str) -> Vec<&'static str> {
         self.edges
@@ -377,5 +396,21 @@ mod tests {
         let (_, t, e) = futures::executor::block_on(c.invoke(0, 6));
         assert_eq!(t.path.last(), Some(&"audit"));
         assert_eq!(e, Some(GraphError::StepBudget(6)));
+    }
+
+    #[test]
+    fn flow_order_starts_at_entry_and_ends_at_sink() {
+        let mut g: StateGraph<u32> = StateGraph::new();
+        g.add_node("z_start", |s| async move { s })
+            .add_node("a_mid", |s| async move { s })
+            .add_node("m_end", |s| async move { s })
+            .set_entry_point("z_start")
+            .set_sink("m_end")
+            .add_edge("z_start", "a_mid")
+            .add_edge("a_mid", "m_end")
+            .add_edge("m_end", END);
+        let c = g.compile().expect("compile");
+        assert_eq!(c.flow_order(), vec!["z_start", "a_mid", "m_end"]);
+        assert_eq!(c.node_names(), vec!["a_mid", "m_end", "z_start"]);
     }
 }
