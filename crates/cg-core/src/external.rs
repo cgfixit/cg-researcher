@@ -53,6 +53,42 @@ impl Provider {
             Self::Xai => "grok-4.7",
         }
     }
+    /// Model-id prefix of this provider's native API (`claude-*`, `grok-*`).
+    pub fn model_prefix(self) -> &'static str {
+        match self {
+            Self::Anthropic => "claude-",
+            Self::Xai => "grok-",
+        }
+    }
+    /// Reject a model id that does not belong to this provider. Empty means
+    /// "use the provider default" and is accepted. Without this, a provider
+    /// switch that leaves the other vendor's id behind (xai + `claude-*`)
+    /// only fails later, at call time, after the operator already consented.
+    pub fn check_model(self, model: &str) -> Result<(), String> {
+        if model.is_empty() || model.starts_with(self.model_prefix()) {
+            return Ok(());
+        }
+        let owner = [Self::Anthropic, Self::Xai]
+            .into_iter()
+            .find(|p| model.starts_with(p.model_prefix()));
+        Err(match owner {
+            Some(o) => format!(
+                "external.model {model:?} belongs to {o} but external.provider is {me}; \
+                 use a {pre}* id or leave it empty for {def}",
+                o = o.display(),
+                me = self.name(),
+                pre = self.model_prefix(),
+                def = self.default_model()
+            ),
+            None => format!(
+                "external.model {model:?} is not a {me} model id (expected {pre}*); \
+                 leave it empty for {def}",
+                me = self.name(),
+                pre = self.model_prefix(),
+                def = self.default_model()
+            ),
+        })
+    }
     /// Expected key prefix; used to catch keys pasted into the wrong slot.
     pub fn key_prefix(self) -> &'static str {
         match self {
@@ -445,6 +481,43 @@ fn take_in(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn model_ids_must_match_the_provider() {
+        use Provider::{Anthropic, Xai};
+        for (p, m) in [
+            (Anthropic, ""),
+            (Anthropic, "claude-sonnet-5-5"),
+            (Xai, ""),
+            (Xai, "grok-4.7"),
+        ] {
+            assert!(p.check_model(m).is_ok(), "{p:?} {m}");
+        }
+        let e = Xai
+            .check_model("claude-sonnet-5-5")
+            .expect_err("cross-vendor");
+        assert!(
+            e.contains("belongs to Anthropic Claude") && e.contains("grok-*"),
+            "{e}"
+        );
+        let e = Anthropic.check_model("grok-4.7").expect_err("cross-vendor");
+        assert!(
+            e.contains("belongs to xAI Grok") && e.contains("claude-*"),
+            "{e}"
+        );
+        for m in [
+            "gpt-5",
+            "Claude-sonnet",
+            "claude",
+            "llama3:8b",
+            "xai/grok-4",
+        ] {
+            assert!(
+                Anthropic.check_model(m).is_err() && Xai.check_model(m).is_err(),
+                "{m}"
+            );
+        }
+    }
 
     #[test]
     fn anthropic_body_has_top_level_system_and_clamped_temperature() {
