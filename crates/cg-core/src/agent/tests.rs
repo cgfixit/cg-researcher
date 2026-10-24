@@ -69,7 +69,20 @@ async fn serve_mock(replies: Vec<Value>) -> (String, Arc<Mock>) {
                     .next()
                     .unwrap_or_default()
                     .to_string();
-                let (status, body) = if first.contains("/chat/completions") {
+                let (status, body) = if first.contains("/v1/messages") {
+                    let req: Value =
+                        serde_json::from_slice(&buf[head_end..]).unwrap_or(Value::Null);
+                    m.seen.lock().expect("lock").push(req);
+                    let r = m.replies.lock().expect("lock").pop_front();
+                    let text = r
+                        .as_ref()
+                        .and_then(|v| v["choices"][0]["message"]["content"].as_str())
+                        .unwrap_or("default")
+                        .to_string();
+                    let body = json!({"type":"message","model":"claude-mock","stop_reason":"end_turn",
+                        "content":[{"type":"text","text":text}]});
+                    ("200 OK", body.to_string())
+                } else if first.contains("/chat/completions") {
                     let req: Value =
                         serde_json::from_slice(&buf[head_end..]).unwrap_or(Value::Null);
                     m.seen.lock().expect("lock").push(req);
@@ -160,17 +173,39 @@ struct H {
 }
 
 async fn harness(replies: Vec<Value>, tweak: impl FnOnce(&mut Config)) -> H {
+    build_harness(replies, tweak, false).await
+}
+
+/// Like `harness`, but the external client also points at the loopback mock.
+async fn harness_ext(replies: Vec<Value>, tweak: impl FnOnce(&mut Config)) -> H {
+    build_harness(
+        replies,
+        |c| {
+            c.app.mode = Mode::Hybrid;
+            c.external.enabled = true;
+            c.external.provider = crate::external::Provider::Xai;
+            tweak(c);
+        },
+        true,
+    )
+    .await
+}
+
+async fn build_harness(replies: Vec<Value>, tweak: impl FnOnce(&mut Config), ext_mock: bool) -> H {
     let dir = tempfile::tempdir().expect("tmp");
     let (base, mock) = serve_mock(replies).await;
+    let base_for_cfg = base.clone();
     let mut cfg = Config::default();
     cfg.app.home = dir.path().to_string_lossy().into();
-    cfg.llm.base_url = base;
+    cfg.llm.base_url = base_for_cfg;
     cfg.llm.timeout_secs = 10;
-    cfg.external.api_key_ref = "file:xai".into();
+    cfg.external.xai_key_ref = "file:xai".into();
+    cfg.external.anthropic_key_ref = "file:anthropic".into();
     tweak(&mut cfg);
     let secrets_dir = dir.path().join("secrets");
     std::fs::create_dir_all(&secrets_dir).expect("mk");
     std::fs::write(secrets_dir.join("xai"), "xai-test-key-000000000000").expect("w");
+    std::fs::write(secrets_dir.join("anthropic"), "sk-ant-test-key-0000000000").expect("w");
     let secrets = SecretStore::new(&secrets_dir);
     let audit_path = dir.path().join("audit.pb");
     let audit = Arc::new(AuditLog::open(&audit_path, &[7u8; 32]).expect("audit"));
@@ -180,9 +215,13 @@ async fn harness(replies: Vec<Value>, tweak: impl FnOnce(&mut Config)) -> H {
     tools
         .register(Arc::new(SendMail(sent.clone())))
         .expect("reg");
-    let agent = Agent::new(cfg, tools, audit, &secrets)
-        .await
-        .expect("agent");
+    let agent = if ext_mock {
+        let b = base.clone();
+        Agent::new_with_external_mock(cfg, tools, audit, &secrets, &b).await
+    } else {
+        Agent::new(cfg, tools, audit, &secrets).await
+    }
+    .expect("agent");
     H {
         agent,
         mock,
@@ -199,6 +238,7 @@ fn req(q: &str, origin: Origin, confirmer: Arc<dyn Confirmer>) -> TurnRequest {
         sender: "tester".into(),
         attachments: vec![],
         confirm_online: None,
+        prefer_external: false,
         confirmer,
     }
 }
@@ -278,10 +318,12 @@ fn external_client_has_exactly_one_construction_site() {
             if p.is_dir() {
                 stack.push(p);
             } else if p.extension().is_some_and(|x| x == "rs") && !p.ends_with("agent/tests.rs") {
-                let s = std::fs::read_to_string(&p).expect("read");
+                let full = std::fs::read_to_string(&p).expect("read");
+                // Unit tests may construct clients directly; production may not.
+                let s = full.split("\n#[cfg(test)]\nmod tests").next().unwrap_or("");
                 for l in s.lines() {
-                    if l.contains("external_xai(")
-                        && !l.contains("fn external_xai(")
+                    if l.contains("external_provider(")
+                        && !l.contains("fn external_provider(")
                         && !l.trim_start().starts_with("//")
                     {
                         sites.push(p.display().to_string());
@@ -526,9 +568,176 @@ async fn audit_chain_verifies_and_stores_no_plaintext() {
     h.agent
         .run(req("second", Origin::Telegram, Arc::new(DenyAll)))
         .await;
-    let n = cg_audit::verify(&h.audit_path, h.agent.deps.audit.keys()).expect("verify");
-    assert_eq!(n, 2);
+    let n = cg_audit::verify_full(&h.audit_path, h.agent.deps.audit.keys()).expect("verify");
+    assert_eq!(n, 3, "model_tuned + two turns");
     let raw = std::fs::read(&h.audit_path).expect("read");
     assert!(!String::from_utf8_lossy(&raw).contains("payroll"));
     assert!(!String::from_utf8_lossy(&raw).contains("tester"));
+}
+
+// ------------------------------------------------------------- external rules
+
+fn ext_seen(h: &H) -> Vec<Value> {
+    h.mock.seen.lock().expect("lock").clone()
+}
+
+#[tokio::test]
+async fn prefer_external_is_consent_from_local_origins_only() {
+    let h = harness_ext(vec![text_reply("from grok")], |_| {}).await;
+    let mut q = req("what is new", Origin::Http, Arc::new(DenyAll));
+    q.prefer_external = true;
+    let r = h.agent.run(q).await;
+    assert_eq!(r.answer, "from grok");
+    assert!(
+        r.answer_model.starts_with("external:xai/"),
+        "{}",
+        r.answer_model
+    );
+    assert!(r.path.contains(&"external_fallback"));
+    assert!(r.tainted, "external output is third-party text");
+    let sent = ext_seen(&h);
+    assert_eq!(sent.len(), 1);
+    assert!(sent[0].get("tools").is_none(), "external never gets tools");
+
+    // Telegram and SMS cannot use prefer_external, and default rules keep
+    // Telegram from confirming at all.
+    for origin in [Origin::Telegram, Origin::Sms] {
+        let h = harness_ext(vec![text_reply("local")], |_| {}).await;
+        let mut q = req("hi", origin, Arc::new(DenyAll));
+        q.prefer_external = true;
+        q.confirm_online = Some(true);
+        let r = h.agent.run(q).await;
+        assert!(
+            !r.path.contains(&"external_fallback"),
+            "{origin:?}: {:?}",
+            r.path
+        );
+    }
+}
+
+#[tokio::test]
+async fn telegram_consent_needs_the_allow_telegram_rule() {
+    let h = harness_ext(vec![text_reply("ext")], |c| {
+        c.external.rules.allow_telegram = true;
+    })
+    .await;
+    let mut q = req("hi", Origin::Telegram, Arc::new(DenyAll));
+    q.confirm_online = Some(true);
+    let r = h.agent.run(q).await;
+    assert!(r.path.contains(&"external_fallback"));
+    // SMS stays local even with the rule on.
+    let h = harness_ext(vec![text_reply("local")], |c| {
+        c.external.rules.allow_telegram = true;
+    })
+    .await;
+    let mut q = req("hi", Origin::Sms, Arc::new(DenyAll));
+    q.confirm_online = Some(true);
+    assert!(!h.agent.run(q).await.path.contains(&"external_fallback"));
+}
+
+#[tokio::test]
+async fn outbound_query_is_redacted_and_capped() {
+    let h = harness_ext(vec![text_reply("ok")], |c| {
+        c.external.rules.max_outbound_chars = 300;
+    })
+    .await;
+    let secret = "sk-ant-api03-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let mut q = req(
+        &format!("my key is {secret} {}", "x".repeat(500)),
+        Origin::Cli,
+        Arc::new(DenyAll),
+    );
+    q.prefer_external = true;
+    h.agent.run(q).await;
+    let body = ext_seen(&h)[0].to_string();
+    assert!(!body.contains(secret), "secret left the machine: {body}");
+    let user = ext_seen(&h)[0]["messages"][1]["content"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    assert!(user.chars().count() <= 300 + "\n[truncated]".len());
+}
+
+#[tokio::test]
+async fn local_context_is_sent_only_when_the_rule_allows() {
+    async fn run(send: bool) -> String {
+        let h = harness_ext(vec![text_reply("ok")], |c| {
+            c.external.rules.send_local_context = send;
+        })
+        .await;
+        // Seed the retriever directly: one corpus chunk.
+        *h.agent.deps.retriever.write().expect("w") =
+            Arc::new(Retriever::new(vec![crate::rag::Chunk {
+                id: 1,
+                source: "notes.md".into(),
+                text: "the vault code is CORPUS-MARKER".into(),
+                embedding: None,
+            }]));
+        let mut q = req("vault code", Origin::Cli, Arc::new(DenyAll));
+        q.prefer_external = true;
+        h.agent.run(q).await;
+        ext_seen(&h)[0].to_string()
+    }
+    assert!(!run(false).await.contains("CORPUS-MARKER"));
+    let with = run(true).await;
+    assert!(with.contains("CORPUS-MARKER"), "rule on, context missing");
+    assert!(
+        with.contains("untrusted"),
+        "context must be wrapped as untrusted"
+    );
+}
+
+#[tokio::test]
+async fn images_and_attachment_text_stay_local_by_default() {
+    let h = harness_ext(vec![text_reply("ok")], |_| {}).await;
+    let lim = crate::config::AttachmentConfig::default();
+    let md = crate::attachments::parse("plan.md", b"ATTACH-MARKER", &lim).expect("md");
+    let mut q = req("summarize", Origin::Cli, Arc::new(DenyAll));
+    q.attachments = vec![md];
+    q.prefer_external = true;
+    h.agent.run(q).await;
+    assert!(!ext_seen(&h)[0].to_string().contains("ATTACH-MARKER"));
+}
+
+#[tokio::test]
+async fn anthropic_provider_uses_messages_api_and_labels_the_answer() {
+    let h = harness_ext(vec![text_reply("from claude")], |c| {
+        c.external.provider = crate::external::Provider::Anthropic;
+        c.external.model = "claude-test".into();
+    })
+    .await;
+    assert_eq!(
+        h.agent.external_label().as_deref(),
+        Some("Anthropic Claude (claude-test)")
+    );
+    let mut q = req("hi", Origin::Cli, Arc::new(DenyAll));
+    q.prefer_external = true;
+    let r = h.agent.run(q).await;
+    assert_eq!(r.answer, "from claude");
+    assert_eq!(r.answer_model, "external:anthropic/claude-test");
+    let sent = ext_seen(&h);
+    assert!(sent[0]["system"].is_string(), "top-level system prompt");
+    assert!(sent[0]["temperature"].as_f64().unwrap_or(9.0) <= 1.0);
+}
+
+#[tokio::test]
+async fn autotune_runs_on_build_and_is_audited() {
+    let h = harness(vec![], |c| c.llm.max_tokens = 999_999).await;
+    let (p, t) = h.agent.local_tuning();
+    assert!(t.max_tokens <= p.max_output_tokens.max(256));
+    let recs = cg_audit::read_all(&h.audit_path).expect("read");
+    assert!(recs.iter().any(|r| r.event == "model_tuned"));
+}
+
+#[tokio::test]
+async fn exhausted_budget_never_calls_the_provider() {
+    let h = harness_ext(vec![text_reply("should not be used")], |c| {
+        c.external.rules.max_calls_per_hour = 0;
+    })
+    .await;
+    let mut q = req("hi", Origin::Cli, Arc::new(DenyAll));
+    q.prefer_external = true;
+    let r = h.agent.run(q).await;
+    assert_eq!(r.answer_model, "external-budget");
+    assert!(ext_seen(&h).is_empty());
 }

@@ -43,7 +43,7 @@ pub async fn run(agent: Arc<Agent>) -> anyhow::Result<()> {
     let lim = agent.config().attachments.clone();
     let mut pending: Vec<Attachment> = Vec::new();
     eprintln!(
-        "cg-agent chat — model {} | external {} | tools {} | /attach <path>  /clear  /quit",
+        "cg-agent chat — model {} | external {} | tools {} | /attach <path>  /ext <q>  /clear  /quit",
         agent.config().llm.model,
         if agent.has_external() {
             "configured (asks first)"
@@ -92,8 +92,19 @@ pub async fn run(agent: Arc<Agent>) -> anyhow::Result<()> {
             }
             continue;
         }
+        // `/ext <question>`: explicitly ask the external model (counts as
+        // per-query consent; still needs gates 1+2 and the rules).
+        let (line, prefer_external) = match line.strip_prefix("/ext ") {
+            Some(q) if agent.has_external() => (q.trim().to_string(), true),
+            Some(_) => {
+                eprintln!("no external model (needs mode = hybrid and external.enabled)");
+                continue;
+            }
+            None => (line, false),
+        };
         let req = TurnRequest {
             query: line,
+            prefer_external,
             origin: Origin::Cli,
             sender: "cli".into(),
             attachments: std::mem::take(&mut pending),

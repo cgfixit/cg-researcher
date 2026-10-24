@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>cg-agent</title>
+<link rel="stylesheet" href="/app.css">
+<script src="/app.js" defer></script>
+</head>
+<body>
+<header class="bar">
+  <div class="brand"><span class="mark" aria-hidden="true">cg</span><span>cg-agent</span></div>
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button role="tab" data-tab="chat" aria-selected="true">Chat</button>
+    <button role="tab" data-tab="models" aria-selected="false">Models</button>
+    <button role="tab" data-tab="rules" aria-selected="false">Rules</button>
+    <button role="tab" data-tab="keys" aria-selected="false">Keys</button>
+    <button role="tab" data-tab="status" aria-selected="false">Status</button>
+  </nav>
+  <div class="pill" id="modePill" title="Run mode">offline</div>
+</header>
+
+<main>
+  <section id="locked" class="panel narrow" hidden>
+    <h1>Not paired</h1>
+    <p>Open the UI from a terminal with <code>cg-agent ui</code>. It mints a single-use pairing code; nothing secret is stored in this page's URL.</p>
+  </section>
+
+  <section id="tab-chat" class="panel" data-panel>
+    <div id="log" class="log" aria-live="polite"></div>
+    <form id="chatForm" class="composer" autocomplete="off">
+      <textarea id="q" rows="3" maxlength="4000" placeholder="Ask cg-agent…  (Enter to send, Shift+Enter for a new line)" required></textarea>
+      <div class="row">
+        <label class="seg"><input type="radio" name="route" value="auto" checked> Auto</label>
+        <label class="seg"><input type="radio" name="route" value="local"> Local only</label>
+        <label class="seg" id="extRouteLabel"><input type="radio" name="route" value="external"> <span id="extRouteName">External</span></label>
+        <label class="file">Attach<input id="files" type="file" accept=".png,.md,.markdown,.txt,.docx" multiple></label>
+        <span id="fileList" class="muted"></span>
+        <button type="submit" class="primary">Send</button>
+      </div>
+    </form>
+  </section>
+
+  <section id="tab-models" class="panel" data-panel hidden>
+    <h2>Local model</h2>
+    <div class="grid">
+      <label>Model<input id="localModel" list="localList" spellcheck="false"></label>
+      <datalist id="localList"></datalist>
+      <label>Vision model<input id="visionModel" list="localList" spellcheck="false" placeholder="(none)"></label>
+      <label>Max tokens<input id="localMax" type="number" min="64" max="65536"></label>
+      <label>Temperature<input id="localTemp" type="number" step="0.05" min="0" max="2"></label>
+    </div>
+    <h2>External fallback</h2>
+    <div class="grid">
+      <label>Mode<select id="mode"><option value="offline">offline (no external client)</option><option value="hybrid">hybrid</option></select></label>
+      <label class="check"><input id="extEnabled" type="checkbox"> External enabled</label>
+      <label>Provider<select id="provider"><option value="anthropic">Anthropic Claude</option><option value="xai">xAI Grok</option></select></label>
+      <label>Model<input id="extModel" list="extList" spellcheck="false"></label>
+      <datalist id="extList"></datalist>
+      <label>xAI region<select id="xaiRegion"><option value="global">global (api.x.ai)</option><option value="us">US (us.api.x.ai)</option></select></label>
+    </div>
+    <div class="row"><button id="switchBtn" class="primary">Switch &amp; autotune</button><button id="retuneBtn">Re-run autotune</button><span id="modelsMsg" class="muted"></span></div>
+    <h2>Tuned profile</h2>
+    <div class="cards">
+      <div class="card"><h3>Local</h3><dl id="localTune"></dl></div>
+      <div class="card"><h3>External</h3><dl id="extTune"></dl></div>
+    </div>
+  </section>
+
+  <section id="tab-rules" class="panel" data-panel hidden>
+    <h2>External rules</h2>
+    <p class="muted">Enforced in the agent graph on every external call. Loosening any rule asks for confirmation and is written to the audit log.</p>
+    <div class="grid">
+      <label class="check"><input id="r_send_local_context" type="checkbox"> Send sanitized local context</label>
+      <label class="check"><input id="r_allow_attachment_text" type="checkbox"> Send attachment text</label>
+      <label class="check"><input id="r_allow_images" type="checkbox"> Send images (vision models only)</label>
+      <label class="check"><input id="r_allow_telegram" type="checkbox"> Telegram may consent (SMS never can)</label>
+      <label>Calls per hour<input id="r_max_calls_per_hour" type="number" min="0" max="1000"></label>
+      <label>Calls per day<input id="r_max_calls_per_day" type="number" min="0" max="10000"></label>
+      <label>Max output tokens<input id="r_max_output_tokens" type="number" min="1" max="64000"></label>
+      <label>Temperature<input id="r_temperature" type="number" step="0.05" min="0" max="2"></label>
+      <label>Max outbound chars<input id="r_max_outbound_chars" type="number" min="256" max="400000"></label>
+    </div>
+    <div class="row"><button id="rulesBtn" class="primary">Save rules</button><span id="rulesMsg" class="muted"></span></div>
+    <p class="note">Fixed by design: external models never receive tools; HTTP and the UI cannot approve write tools; bind address, loopback rules and connectors are not editable here.</p>
+  </section>
+
+  <section id="tab-keys" class="panel" data-panel hidden>
+    <h2>API keys</h2>
+    <p class="muted">Stored in the macOS Keychain (owner-only file fallback elsewhere). This page never displays a stored key.</p>
+    <div class="cards">
+      <form class="card" data-provider="anthropic">
+        <h3>Anthropic</h3><p class="state" data-state>unknown</p>
+        <input type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…" required>
+        <div class="row"><button type="submit" class="primary">Save</button><button type="button" data-del>Delete</button></div>
+      </form>
+      <form class="card" data-provider="xai">
+        <h3>xAI</h3><p class="state" data-state>unknown</p>
+        <input type="password" autocomplete="off" spellcheck="false" placeholder="xai-…" required>
+        <div class="row"><button type="submit" class="primary">Save</button><button type="button" data-del>Delete</button></div>
+      </form>
+    </div>
+    <p id="keysMsg" class="muted"></p>
+  </section>
+
+  <section id="tab-status" class="panel" data-panel hidden>
+    <div class="row"><button id="refreshBtn">Refresh</button><button id="verifyBtn">Verify audit chain</button><span id="verifyMsg" class="muted"></span></div>
+    <div class="cards">
+      <div class="card"><h3>Health</h3><dl id="health"></dl></div>
+      <div class="card"><h3>Budget</h3><dl id="budget"></dl></div>
+      <div class="card wide"><h3>Tools</h3><ul id="tools" class="chips"></ul></div>
+      <div class="card wide"><h3>Graph</h3><p id="graph" class="mono"></p></div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

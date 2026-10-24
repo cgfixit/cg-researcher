@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use cg_core::sandbox::clean_command;
 use clap::{Parser, Subcommand};
-use runtime::{AgentHandler, Runtime};
+use runtime::{AgentHandler, AgentSlot, Control, Runtime};
 
 const DEFAULT_CONFIG: &str = include_str!("../../../config/cg.toml");
 
@@ -55,6 +55,17 @@ enum Cmd {
     GoogleAuth,
     /// Offline checks: config, graph, connectors, egress pinning, local model.
     Selftest,
+    /// Scheduled health check for launchd/cron: runs `selftest` (which
+    /// includes audit-chain verification) and records the outcome in the
+    /// audit log. Exits non-zero on failure. No network beyond loopback.
+    Maintain,
+    /// Open the local web UI (needs `cg-agent serve` running). Mints a
+    /// single-use pairing code; the API key never appears in a URL.
+    Ui {
+        /// Print the URL instead of opening the browser.
+        #[arg(long)]
+        print: bool,
+    },
     /// Launch CyClaw-Net-Viewer (macOS) or print its CLI snapshot.
     Netviewer {
         #[arg(long)]
@@ -110,12 +121,13 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             let (agent, gateways, enabled) = r.agent().await?;
             let key = std::fs::read_to_string(r.layout.api_key())
                 .map_err(|_| anyhow::anyhow!("no API key; run `cg-agent init`"))?;
-            let state = Arc::new(serve::AppState {
-                agent: agent.clone(),
-                api_key: key.trim().to_string(),
-                limit_per_min: r.cfg.server.rate_limit_per_min.max(1) as usize,
-                recent: Default::default(),
-            });
+            let slot: Arc<AgentSlot> = Arc::new(tokio::sync::RwLock::new(agent));
+            let state = Arc::new(serve::AppState::new(
+                slot.clone(),
+                Arc::new(Control::from_runtime(&r)),
+                key.trim().to_string(),
+                r.cfg.server.rate_limit_per_min.max(1) as usize,
+            ));
             cg_core::secrets::redactor().register(key.trim());
             let ip: std::net::IpAddr = r.cfg.server.host.parse()?;
             r.event(
@@ -123,7 +135,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                 format!("port={} connectors={enabled:?}", r.cfg.server.port),
             );
             if !no_gateways {
-                spawn_gateways(gateways, agent);
+                spawn_gateways(gateways, slot);
             }
             serve::serve(
                 state,
@@ -146,7 +158,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                     gateways.iter().map(|g| g.name()).collect::<Vec<_>>()
                 ),
             );
-            spawn_gateways(gateways, agent);
+            spawn_gateways(gateways, Arc::new(tokio::sync::RwLock::new(agent)));
             serve::shutdown().await;
             Ok(())
         }
@@ -164,7 +176,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             let r = Runtime::load(home)?;
             match cmd {
                 AuditCmd::Verify => {
-                    let n = cg_audit::verify(&r.layout.audit_log(), r.audit.keys())?;
+                    let n = r.audit.verify_now()?;
                     println!("audit chain OK: {n} records");
                 }
                 AuditCmd::Tail { n } => {
@@ -216,15 +228,25 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             Ok(())
         }
         Cmd::Selftest => selftest(home).await,
+        Cmd::Maintain => {
+            let res = selftest(home.clone()).await;
+            let r = Runtime::load(home)?;
+            r.event(
+                "maintenance",
+                match &res {
+                    Ok(()) => "ok".to_string(),
+                    Err(e) => format!("fail: {e}"),
+                },
+            );
+            res
+        }
+        Cmd::Ui { print } => ui(home, print).await,
         Cmd::Netviewer { cli } => netviewer(&home, cli).await,
     }
 }
 
-fn spawn_gateways(
-    gateways: Vec<Arc<dyn cg_core::tools::Gateway>>,
-    agent: Arc<cg_core::agent::Agent>,
-) {
-    let handler: Arc<dyn cg_core::tools::InboundHandler> = Arc::new(AgentHandler(agent));
+fn spawn_gateways(gateways: Vec<Arc<dyn cg_core::tools::Gateway>>, slot: Arc<AgentSlot>) {
+    let handler: Arc<dyn cg_core::tools::InboundHandler> = Arc::new(AgentHandler(slot));
     for g in gateways {
         let h = handler.clone();
         tokio::spawn(async move {
@@ -340,7 +362,7 @@ async fn selftest(home: PathBuf) -> anyhow::Result<()> {
         refused,
         String::new(),
     );
-    let n = cg_audit::verify(&r.layout.audit_log(), r.audit.keys());
+    let n = r.audit.verify_now();
     check(
         "audit chain verifies",
         n.is_ok(),
@@ -402,3 +424,43 @@ async fn netviewer(home: &std::path::Path, cli: bool) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests;
+
+async fn ui(home: PathBuf, print: bool) -> anyhow::Result<()> {
+    let r = Runtime::load(home)?;
+    let key = std::fs::read_to_string(r.layout.api_key())
+        .map_err(|_| anyhow::anyhow!("no API key; run `cg-agent init`"))?;
+    let base = format!("http://127.0.0.1:{}", r.cfg.server.port);
+    let egress =
+        cg_core::egress::Egress::new("ui-pair", &[], true, std::time::Duration::from_secs(5))?;
+    let resp = egress
+        .post(&format!("{base}/api/pair"))?
+        .bearer_auth(key.trim())
+        .send()
+        .await
+        .map_err(|_| anyhow::anyhow!("cannot reach {base}; is `cg-agent serve` running?"))?;
+    anyhow::ensure!(
+        resp.status().is_success(),
+        "pairing refused: {}",
+        resp.status()
+    );
+    let v: serde_json::Value = resp.json().await?;
+    let code = v["pair"].as_str().unwrap_or_default();
+    anyhow::ensure!(
+        code.len() == 64 && code.chars().all(|c| c.is_ascii_hexdigit()),
+        "unexpected pairing reply"
+    );
+    // The fragment never reaches the server or logs; the page swaps it for a
+    // session token, scrubs it from history, and it expires in 2 minutes.
+    let url = format!("{base}/#p={code}");
+    if print || !cfg!(target_os = "macos") {
+        println!("{url}");
+        eprintln!("single-use, expires in {}s", v["ttl_secs"]);
+    } else {
+        let st = std::process::Command::new("/usr/bin/open")
+            .arg(&url)
+            .status()?;
+        anyhow::ensure!(st.success(), "open failed; rerun with --print");
+        eprintln!("opened the UI (pairing code is single-use)");
+    }
+    Ok(())
+}

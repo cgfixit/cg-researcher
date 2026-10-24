@@ -1,8 +1,18 @@
 name: ci
+# macOS is the product target. Build, test, Keychain, launchd and installer jobs
+# all run on Apple Silicon runners. OS-independent jobs (lockfile audit, workflow
+# lint, secret scan) stay on Linux because a macOS minute costs ~10x more.
 on:
   push:
     branches: ["cg/main"]
+    paths-ignore: ["**.md", "LICENSE"]
   pull_request:
+    paths-ignore: ["**.md", "LICENSE"]
+  workflow_dispatch:
+  # Weekly macOS build+test against the pinned toolchain so runner-image
+  # drift (Xcode, macOS point releases) surfaces without a push. Mon 07:41 UTC.
+  schedule:
+    - cron: "41 7 * * 1"
 permissions:
   contents: read
 concurrency:
@@ -17,9 +27,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-15]
+        # macos-15 = Sequoia arm64, macos-26 = Tahoe arm64 (macos-latest since 2026-07).
+        os: [macos-15, macos-26]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -28,13 +39,107 @@ jobs:
         with:
           toolchain: 1.99.1
           components: rustfmt, clippy
+          targets: x86_64-apple-darwin
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
+      - name: Intel (x86_64-apple-darwin) cross-check
+        run: cargo clippy --workspace --all-targets --locked --target x86_64-apple-darwin -- -D warnings
+      - name: Keychain round trip against a throwaway keychain
+        run: |
+          set -euo pipefail
+          kc="$RUNNER_TEMP/cg-test.keychain-db"
+          pw="$(openssl rand -hex 16)"
+          security create-keychain -p "$pw" "$kc"
+          security set-keychain-settings -lut 900 "$kc"
+          security unlock-keychain -p "$pw" "$kc"
+          # shellcheck disable=SC2046
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -d user -s "$kc"
+          cargo test -p cg-core --locked keychain -- --ignored --nocapture
+      - name: Remove throwaway keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/cg-test.keychain-db" 2>/dev/null || true
+
+  install-smoke:
+    name: install.sh --service / launchd / uninstall (macos-15)
+    # Release build on a 3-core runner is the slowest job; skip it on PRs.
+    if: github.event_name != 'pull_request'
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10
+        with:
+          toolchain: 1.99.1
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: plist renders and lints
+        run: |
+          set -euo pipefail
+          ./scripts/install.sh --print-plist | plutil -lint -
+          ./scripts/install.sh --print-maintenance-plist | plutil -lint -
+      - name: install with launchd agent + maintenance job
+        env:
+          CG_HOME: ${{ runner.temp }}/cgh
+        run: ./scripts/install.sh --service --maintenance
+      - name: agent is loaded, signed, private, and healthy on loopback
+        env:
+          CG_HOME: ${{ runner.temp }}/cgh
+        run: |
+          set -euo pipefail
+          launchctl print "gui/$(id -u)/com.cgfixit.cg-agent" | grep -E "state = (running|waiting)"
+          codesign --verify --strict --verbose=2 "$CG_HOME/bin/cg-agent"
+          codesign -d --verbose=2 "$CG_HOME/bin/cg-agent" 2>&1 | grep -q "flags=.*runtime"
+          [[ "$(stat -f %Lp "$CG_HOME")" == 700 ]]
+          [[ "$(stat -f %Lp "$CG_HOME/cg.toml")" == 600 ]]
+          for _ in $(seq 1 30); do curl -fsS http://127.0.0.1:8797/health && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8797/health
+          code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8797/tools)"
+          [[ "$code" == 401 ]]
+          # DNS-rebinding guard: a foreign Host header is refused before auth
+          code="$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: evil.example' http://127.0.0.1:8797/)"
+          [[ "$code" == 421 ]]
+          # the web UI is served with a strict CSP
+          curl -fsSI http://127.0.0.1:8797/ | grep -qi "content-security-policy: default-src 'none'"
+          # must not listen on non-loopback addresses (`! cmd` is exempt from set -e, so test explicitly)
+          if lsof -nP -iTCP:8797 -sTCP:LISTEN | grep -v -E "127\.0\.0\.1|\[::1\]|^COMMAND"; then
+            echo "listening on a non-loopback address" >&2; exit 1
+          fi
+          "$CG_HOME/bin/cg-agent" --home "$CG_HOME" selftest
+          "$CG_HOME/bin/cg-agent" --home "$CG_HOME" audit verify
+          # scheduled job: loaded, and a manual kick writes to the shared chain
+          # while `serve` is also appending (exercises the cross-process lock)
+          launchctl print "gui/$(id -u)/com.cgfixit.cg-agent.maintenance" >/dev/null
+          launchctl kickstart -k "gui/$(id -u)/com.cgfixit.cg-agent.maintenance"
+          for _ in $(seq 1 30); do
+            if "$CG_HOME/bin/cg-agent" --home "$CG_HOME" audit tail -n 50 | grep -q " maintenance "; then break; fi
+            sleep 2
+          done
+          "$CG_HOME/bin/cg-agent" --home "$CG_HOME" audit tail -n 50 | grep " maintenance "
+          "$CG_HOME/bin/cg-agent" --home "$CG_HOME" audit verify
+      - name: uninstall --purge removes agent, binaries and data
+        if: always()
+        env:
+          CG_HOME: ${{ runner.temp }}/cgh
+        run: |
+          set -euo pipefail
+          ./scripts/uninstall.sh --purge --yes
+          if launchctl print "gui/$(id -u)/com.cgfixit.cg-agent" >/dev/null 2>&1; then
+            echo "launchd agent still loaded" >&2; exit 1
+          fi
+          [[ ! -e "$HOME/Library/LaunchAgents/com.cgfixit.cg-agent.plist" ]]
+          [[ ! -e "$HOME/Library/LaunchAgents/com.cgfixit.cg-agent.maintenance.plist" ]]
+          [[ ! -e "$CG_HOME" ]]
+      - name: serve log on failure
+        if: failure()
+        run: tail -n 100 "$RUNNER_TEMP/cgh/logs/serve.stderr.log" 2>/dev/null || true
+
   msrv:
-    name: build on rust-version (1.90)
-    runs-on: ubuntu-latest
+    name: build on rust-version 1.90 (macos-15)
+    runs-on: macos-15
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -43,4 +148,4 @@ jobs:
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10
         with:
           toolchain: "1.90"
-      - run: cargo +1.90 check --workspace --locked
+      - run: cargo +1.90 check --workspace --all-targets --locked

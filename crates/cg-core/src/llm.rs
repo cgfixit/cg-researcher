@@ -1,7 +1,7 @@
 //! Model backends. One OpenAI-compatible client covers every local server
 //! upstream could not use: Ollama (`/v1`), LM Studio, llama.cpp `llama-server`,
-//! MLX (`mlx_lm.server`), vLLM and LocalAI. The same client, pinned to
-//! `api.x.ai`, is the triple-gated external fallback.
+//! MLX (`mlx_lm.server`), vLLM and LocalAI. The triple-gated external
+//! fallback (Anthropic / xAI) lives in `external.rs`.
 
 use std::time::Duration;
 
@@ -66,19 +66,29 @@ impl OpenAiCompat {
         })
     }
 
-    /// The external fallback. Construct ONLY inside the double-gated branch in
-    /// `agent::Agent::new` (mode == hybrid && external.enabled).
-    pub(crate) fn external_xai(
-        timeout: Duration,
-        key: crate::secrets::Secret,
-    ) -> anyhow::Result<Self> {
-        let egress = Egress::new("llm-external", &["api.x.ai"], false, timeout)?;
-        Ok(Self {
-            base: "https://api.x.ai/v1".into(),
-            egress,
-            key: Some(key),
-            label: "external",
-        })
+    pub(crate) fn egress(&self) -> &Egress {
+        &self.egress
+    }
+
+    /// Model ids the local server reports (`GET /models`).
+    pub async fn list_models(&self) -> Result<Vec<String>, LlmError> {
+        let rb = self.auth(self.egress.get(&format!("{}/models", self.base))?);
+        let resp = rb
+            .send()
+            .await
+            .map_err(|e| LlmError::Http(crate::sanitizer::redact(&e.to_string())))?;
+        if !resp.status().is_success() {
+            return Err(LlmError::Http(resp.status().to_string()));
+        }
+        let v: Value = resp.json().await.map_err(|_| LlmError::Shape)?;
+        let mut ids: Vec<String> = v["data"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|m| m["id"].as_str().map(str::to_string))
+            .collect();
+        ids.sort();
+        Ok(ids)
     }
 
     fn auth(&self, rb: reqwest::RequestBuilder) -> reqwest::RequestBuilder {

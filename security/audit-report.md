@@ -6,7 +6,7 @@ Date: 2026-10-24. Target: `cgfixit/cg-agent`, branch `cg/main`, `Cargo.lock` wit
 
 - **0 known vulnerabilities and 0 RustSec warnings.** Two independent databases agree: RustSec through cargo-audit, and OSV through osv-scanner.
 - **No banned crates.** Telemetry SDKs, OpenSSL and native-tls are all absent, and cargo-deny enforces this in CI.
-- The only open items are 5 accepted risks, listed below. None of them is a CVE.
+- The only open items are 6 accepted risks, listed below. None of them is a CVE.
 
 Caveat: a clean scan only means nothing known is present today. It does not show the code is free of vulnerabilities. Reachability analysis was skipped because there were no findings to analyse.
 
@@ -43,17 +43,23 @@ Caveat: a clean scan only means nothing known is present today. It does not show
 
 | ID | Issue | Why accepted / mitigation |
 |---|---|---|
-| CG-ACC-001 | Deleting whole records from the end of the audit log goes undetected | The hash chain catches byte flips, reordering and mid-frame truncation; all three were verified in the e2e run. To also catch tail deletion, store the head hash somewhere external. |
-| CG-ACC-002 | On macOS, `security add-generic-password -w` puts the secret on argv | Only the same user can see it, and only while `store` runs. This fits the single-operator model. Reads go through stdout. |
+| CG-ACC-001 | A same-user attacker holding `audit.key` can truncate the log and forge a matching head | **Narrowed.** A signed head (`audit.pb.head`) now catches tail deletion by anyone without the key. Defeating a key holder needs an off-host anchor. |
 | CG-ACC-003 | Duplicate transitive crate versions | No advisories. The cost is binary size and build time only. |
-| CG-ACC-004 | An oversized body returns 400 instead of 413 | The limit itself is still enforced. Only the status code is wrong. |
 | CG-ACC-005 | No checksum was published for the cargo-audit 0.22.2 release binary used in the local scan | CI builds cargo-audit from crates.io with `--locked` and does not use that binary. |
+| CG-ACC-006 | Ad-hoc code signing means Keychain shows an "Always Allow" prompt after each rebuild | There is no Developer ID or notarization. The prompt is a nuisance, not a bypass. |
+| CG-ACC-007 | The external-call budget lives in memory and resets when the process restarts | Restarting needs local access. Provider-side spend limits are the backstop. |
+| CG-ACC-008 | Anyone holding the API key can mint UI pairing codes, and sessions are memory-only | Same-user tool by design. The key file is 0600, and codes are single-use with a 120 s TTL. |
+
+Resolved since the previous report:
+- **CG-ACC-002:** the Keychain write no longer passes the secret on argv; it uses `security-framework` 3.7.0 in-process.
+- **CG-ACC-004:** an oversized body now returns 413, and a test covers it.
+- **New (fixed):** concurrent writers (`serve` + `chat` + scheduled `maintain`) could fork the audit chain. Appends now take an advisory lock on `audit.pb.lock` and resync from the verified tail. Covered by a 6-writer test and a live smoke with 3 concurrent processes plus `serve`.
 
 ## Not covered
 
 - No fuzzing.
 - No `cargo-geiger` count of unsafe code in dependencies; `forbid(unsafe_code)` covers first-party crates only.
 - No SBOM was produced. `cargo cyclonedx` would be the next step.
-- Not built or run on macOS or Windows. macOS CI exists (`macos-15`) but has not run yet.
+- Not built or run on macOS or Windows. The macOS CI matrix (`macos-15` / `macos-26`) exists but has not run, because GitHub Actions billing is blocked on this account.
 
 Raw machine-readable output is in `findings.json` and `findings.sarif`. The SARIF file can be uploaded with `github/codeql-action/upload-sarif`.
