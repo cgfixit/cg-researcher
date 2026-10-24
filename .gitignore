@@ -1,10 +1,25 @@
 # ---- build output ----
-/target
+# any cargo target dir (workspace root, fuzz/, a crate built standalone with --target-dir)
+target/
 /dist
+*.app/
 **/*.rs.bk
+*.tmp
+# coverage / profiling / perf scratch (cargo-llvm-cov, Instruments, flamegraph, perf, cargo-mutants)
 lcov.info
 summary.txt
+*.profraw
+*.profdata
 cargo-timing*.html
+*.dSYM/
+*.trace/
+perf.data*
+flamegraph.svg
+mutants.out*/
+# local model weights or embeddings someone drops next to the corpus
+*.gguf
+*.safetensors
+*.onnx
 
 # ---- runtime data: never commit a data directory, from ~/.cg-researcher or a --home ----
 .cg-researcher/
@@ -71,22 +86,37 @@ id_ed25519*
 .LSOverride
 .Spotlight-V100
 .Trashes
+.fseventsd
+.TemporaryItems
+.DocumentRevisions-V100
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
 Icon?
 
 # ---- editors / tooling ----
 .idea/
 .vscode/
+.zed/
 *.swp
 *.swo
 *~
+# Claude Code: personal overrides and local worktrees; .claude/skills/ stays tracked
 .claude/settings.local.json
+.claude/worktrees/
+CLAUDE.local.md
 .direnv/
 .envrc
+# local scanner output (the reviewed deliverables in security/ are tracked on purpose)
+gitleaks-report.*
+zizmor*.sarif
+cargo-audit*.json
 
 # ---- node (e2e) and fuzz also carry their own .gitignore ----
 node_modules/
 playwright-report/
 test-results/
+playwright/.cache/
+playwright/.auth/
 
 # ---- patch / merge debris ----
 *.orig
