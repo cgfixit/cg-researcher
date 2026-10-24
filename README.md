@@ -26,8 +26,8 @@ cg-researcher ui                     # local web UI (needs serve / --service run
 ```
 
 cg-researcher targets **Apple Silicon (arm64) Macs on macOS 14 (Sonoma) or newer**, including macOS 27
-"Golden Gate", which is Apple silicon only. CI runs the Mac jobs on macOS 15 and 26; Golden Gate uses the same
-arm64 binary but is not in the CI matrix yet. Intel builds (`--target x86_64-apple-darwin`) are best-effort and
+"Golden Gate", which is Apple silicon only. CI runs the Mac jobs on macOS 15 and `macos-latest` (macOS 26 today, Golden Gate once GitHub moves the label); Golden Gate uses the same
+arm64 binary. Intel builds (`--target x86_64-apple-darwin`) are best-effort and
 only possible on macOS 26 or older, because Golden Gate does not run on Intel Macs.
 Linux builds and passes the test suite, but it is best-effort: no Keychain, no launchd, and the installer refuses to run.
 
@@ -230,7 +230,7 @@ connectors, external providers via a loopback mock, the UI/HTTP security surface
 on 1.99.1, an MSRV 1.90 check, and an end-to-end smoke with `serve`, three concurrent `maintain` runs, UI
 pairing, a headless-browser pass over every tab, 12 Playwright UI tests (Chromium + WebKit), 60 s
 fuzz runs per target (~3.2M inputs, no crashes), 74% line coverage, and the `.app` launch path. **Not yet run on a Mac**: the macOS CI matrix
-(macos-15 / macos-26, Keychain, launchd, installer; macOS 27 is not in the matrix) is written but GitHub Actions has not executed it
+(macos-15 / macos-latest, Keychain, launchd, installer) is written but GitHub Actions has not executed it
 on this account. Windows is unsupported. Real Anthropic/xAI/Telegram/Twilio/Google/SerpAPI accounts
 were not exercised.
 
