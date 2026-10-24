@@ -465,7 +465,7 @@ async fn app(home: PathBuf) -> anyhow::Result<()> {
         init(home.clone(), false)?;
     }
     let r = Runtime::load(home.clone())?;
-    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], r.cfg.server.port));
+    let addr = std::net::SocketAddr::new(r.cfg.server.host.parse()?, r.cfg.server.port);
     let up = || {
         std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(300)).is_ok()
     };
@@ -516,15 +516,40 @@ async fn ui(home: PathBuf, print: bool) -> anyhow::Result<()> {
     let r = Runtime::load(home)?;
     let key = std::fs::read_to_string(r.layout.api_key())
         .map_err(|_| anyhow::anyhow!("no API key; run `cg-researcher init`"))?;
-    let base = format!("http://127.0.0.1:{}", r.cfg.server.port);
+    let addr = std::net::SocketAddr::new(r.cfg.server.host.parse()?, r.cfg.server.port);
+    let base = format!("http://{addr}");
     let egress =
         cg_core::egress::Egress::new("ui-pair", &[], true, std::time::Duration::from_secs(5))?;
+    // Authenticate the listener before opening its UI; never transmit the API key.
+    let nonce = random_hex(32)?;
     let resp = egress
-        .post(&format!("{base}/api/pair"))?
-        .bearer_auth(key.trim())
+        .post(&format!("{base}/api/pair/challenge"))?
+        .json(&serde_json::json!({"nonce": nonce}))
         .send()
         .await
         .map_err(|_| anyhow::anyhow!("cannot reach {base}; is `cg-researcher serve` running?"))?;
+    anyhow::ensure!(
+        resp.status().is_success(),
+        "pairing challenge refused: {}",
+        resp.status()
+    );
+    let v: serde_json::Value = resp.json().await?;
+    let challenge = v["challenge"].as_str().unwrap_or_default();
+    let proof = v["proof"].as_str().unwrap_or_default();
+    let expected = serve::pairing_proof(key.trim(), "server", &nonce, challenge);
+    use subtle::ConstantTimeEq;
+    anyhow::ensure!(
+        challenge.len() == 64
+            && challenge.bytes().all(|b| b.is_ascii_hexdigit())
+            && bool::from(expected.as_bytes().ct_eq(proof.as_bytes())),
+        "local server identity check failed; refusing to pair"
+    );
+    let resp = egress
+        .post(&format!("{base}/api/pair/local"))?
+        .json(&serde_json::json!({"nonce": nonce, "challenge": challenge,
+            "proof": serve::pairing_proof(key.trim(), "client", &nonce, challenge)}))
+        .send()
+        .await?;
     anyhow::ensure!(
         resp.status().is_success(),
         "pairing refused: {}",
