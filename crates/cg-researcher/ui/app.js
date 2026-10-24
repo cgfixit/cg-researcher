@@ -8,6 +8,8 @@ const r2 = (x) => (typeof x === 'number' ? Math.round(x * 100) / 100 : x);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const TOKEN_KEY = 'cg-researcher-session';
 let status = null;
+let extDefaults = {};
+const FAMILY = { anthropic: /^claude/i, xai: /^grok/i };
 let busy = false;
 // Client-side pre-checks only; the server enforces its own limits.
 let limits = { max_bytes: 10 * 1024 * 1024, max_per_turn: 4 };
@@ -337,6 +339,23 @@ async function onRetune(ev) {
   });
 }
 
+// Switching provider must not leave the other vendor's model id behind
+// (e.g. xAI + claude-*), which would only fail later at call time.
+function onProvider() {
+  const p = $('#provider').value;
+  const model = $('#extModel').value.trim();
+  const other = Object.keys(FAMILY).find(k => k !== p && FAMILY[k].test(model));
+  if ((!model || other) && extDefaults[p]) $('#extModel').value = extDefaults[p];
+  if (status && status.external.provider !== p) fillList('#extList', extDefaults[p] ? [extDefaults[p]] : []);
+  syncProviderFields();
+}
+
+function syncProviderFields() {
+  const xai = $('#provider').value === 'xai';
+  $('#xaiRegion').disabled = !xai;
+  $('#xaiRegion').closest('label').classList.toggle('off', !xai);
+}
+
 // ------------------------------------------------------------ keys
 async function onKey(ev) {
   ev.preventDefault();
@@ -441,8 +460,10 @@ async function refresh() {
     el('span', { class: 'node' }, e.node),
     el('span', { class: 'muted' }, visible(e.to).length ? ' → ' + visible(e.to).join(' | ') : ' (end)'))));
 
+  syncProviderFields();
   const m = await api('/api/models');
   if (m.status === 200) {
+    extDefaults = m.data.external_defaults || {};
     fillList('#localList', m.data.local || []);
     fillList('#extList', (m.data.external && m.data.external.length) ? m.data.external : Object.values(m.data.external_defaults || {}));
   }
@@ -484,6 +505,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   $$('.ex').forEach(b => b.addEventListener('click', () => { $('#q').value = b.textContent; $('#q').focus(); }));
   $('#newChat').addEventListener('click', newChat);
   $('#files').addEventListener('change', e => setFiles(e.target.files));
+  $('#provider').addEventListener('change', onProvider);
   $('#switchBtn').addEventListener('click', guard(onSwitch, '#modelsMsg'));
   $('#retuneBtn').addEventListener('click', guard(onRetune, '#modelsMsg'));
   $('#rulesBtn').addEventListener('click', guard(onRules, '#rulesMsg'));
