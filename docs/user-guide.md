@@ -34,8 +34,12 @@ attachments to reach a model, set `llm.vision_model`.
 
 - `cg-researcher chat`: `/attach <file>` (.png .docx .md .txt), `/ext <q>` asks the external model, `/clear`, `/quit`.
 - `cg-researcher ui`: opens the web UI (pairs with a single-use code). Tabs: Chat, Models, Rules, Keys, Status.
+  Chat shows the corpus folder and chunk count, a live "Thinking… Ns" timer, source chips, a Copy button
+  and New chat (clears the page only; nothing is stored). Status → Reindex corpus does the same as
+  `cg-researcher index` without leaving the browser. If the server restarts, the page says "Session
+  ended"; run `cg-researcher ui` again.
 - `cg-researcher index`: re-run after adding or changing files, or after changing `embed_model`. A running server
-  picks up the new index without a restart.
+  picks up the new index without a restart. The UI button calls `POST /api/reindex` (authenticated).
 - HTTP: `POST 127.0.0.1:8797/query` with `Authorization: Bearer $(cat ~/.cg-researcher/secrets/api.key)`.
 
 How answers are chosen: retrieval scores the question against your corpus (keyword + semantic). A

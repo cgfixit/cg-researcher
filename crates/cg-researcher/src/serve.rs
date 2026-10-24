@@ -135,6 +135,7 @@ pub fn router(state: Arc<AppState>, max_body: usize) -> Router {
         .route("/api/models", get(models))
         .route("/api/settings", post(settings))
         .route("/api/autotune", post(autotune))
+        .route("/api/reindex", post(reindex))
         .route("/api/keys", post(set_key))
         .route("/api/keys/delete", post(delete_key))
         .route("/api/audit/verify", get(audit_verify))
@@ -418,7 +419,10 @@ async fn status(State(s): State<Arc<AppState>>, h: HeaderMap) -> Response {
         },
         "tools": agent.tool_specs().iter().map(|t| json!({"name": t.name, "write": t.effect == cg_core::tools::Effect::Write})).collect::<Vec<_>>(),
         "graph": agent.graph_nodes(),
+        "graph_edges": agent.graph_edges().into_iter().map(|(n, to)| json!({"node": n, "to": to})).collect::<Vec<_>>(),
         "indexed_chunks": agent.indexed_chunks(),
+        "corpus_dir": agent.corpus_dir().display().to_string(),
+        "attachments": json!({"max_bytes": c.attachments.max_bytes, "max_per_turn": c.attachments.max_per_turn}),
         "http_can_approve_writes": false,
     }))
     .into_response()
@@ -550,6 +554,26 @@ async fn autotune(State(s): State<Arc<AppState>>, h: HeaderMap) -> Response {
         }
         Err(e) => err(
             StatusCode::BAD_GATEWAY,
+            &cg_core::sanitizer::redact(&e.to_string()),
+        ),
+    }
+}
+
+/// Rebuild the RAG index from the corpus directory (same as `cg-researcher index`).
+/// Serialized with settings changes; the running agent picks up the new index.
+async fn reindex(State(s): State<Arc<AppState>>, h: HeaderMap) -> Response {
+    if let Err(r) = gate(&s, &h).await {
+        return r;
+    }
+    let _guard = s.control.lock.lock().await;
+    let agent = current(&s.slot).await;
+    match agent.reindex().await {
+        Ok((files, chunks, embedded)) => Json(json!({
+            "ok": true, "files": files, "chunks": chunks, "embedded": embedded,
+        }))
+        .into_response(),
+        Err(e) => err(
+            StatusCode::INTERNAL_SERVER_ERROR,
             &cg_core::sanitizer::redact(&e.to_string()),
         ),
     }
