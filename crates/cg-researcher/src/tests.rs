@@ -133,13 +133,38 @@ async fn local_pairing_authenticates_both_sides_and_consumes_challenges() {
         .await
         .expect("session");
     assert_eq!(r.status(), StatusCode::OK);
-    // Pending proofs die on restart, even if the permanent key is unchanged.
-    s.challenges.lock().await.clear();
-    let r = app
-        .oneshot(post("/api/pair/local", None, &body))
-        .await
-        .expect("restart");
-    assert_eq!(r.status(), StatusCode::UNAUTHORIZED);
+    for expire in [true, false] {
+        let challenge = body_json(
+            app.clone()
+                .oneshot(post(
+                    "/api/pair/challenge",
+                    None,
+                    &serde_json::json!({"nonce":nonce}).to_string(),
+                ))
+                .await
+                .expect("fresh challenge"),
+        )
+        .await;
+        let c = challenge["challenge"].as_str().expect("challenge");
+        let proof = crate::serve::pairing_proof(&s.api_key, "client", &nonce, c);
+        if expire {
+            s.challenges.lock().await[0].2 =
+                std::time::Instant::now() - std::time::Duration::from_secs(1);
+        } else {
+            // A restarted server has no pending challenges, even with the same key.
+            s.challenges.lock().await.clear();
+        }
+        let r = app
+            .clone()
+            .oneshot(post(
+                "/api/pair/local",
+                None,
+                &serde_json::json!({"nonce":nonce,"challenge":c,"proof":proof}).to_string(),
+            ))
+            .await
+            .expect("expired or restarted");
+        assert_eq!(r.status(), StatusCode::UNAUTHORIZED);
+    }
 }
 
 #[tokio::test]
