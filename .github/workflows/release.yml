@@ -97,7 +97,9 @@ jobs:
           lipo -create -output dist/cg-researcher/cg-researcher \
             target/aarch64-apple-darwin/release/cg-researcher \
             target/x86_64-apple-darwin/release/cg-researcher
-          lipo -verify_arch dist/cg-researcher/cg-researcher arm64 x86_64
+          for arch in arm64 x86_64; do
+            lipo dist/cg-researcher/cg-researcher -verify_arch "$arch"
+          done
           codesign --force --sign - --options runtime --identifier com.cgfixit.cg-researcher dist/cg-researcher/cg-researcher
           codesign --verify --strict dist/cg-researcher/cg-researcher
           cp -R LICENSE README.md SECURITY.md INVARIANTS.md config scripts install.command uninstall.command dist/cg-researcher/

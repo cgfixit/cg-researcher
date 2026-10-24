@@ -121,18 +121,19 @@ jobs:
           done
           "$CG_HOME/bin/cg-researcher" --home "$CG_HOME" audit tail -n 50 | grep " maintenance "
           "$CG_HOME/bin/cg-researcher" --home "$CG_HOME" audit verify
-      - name: .app bundle assembles, signs and reuses the running server
+      - name: .app bundle assembles, signs and pairs with the running server
         env:
           CG_HOME: ${{ runner.temp }}/cgh
         run: |
           set -euo pipefail
           scripts/bundle-app.sh target/release/cg-researcher
           codesign --verify --strict --deep dist/cg-researcher.app
-          # double-click path, headless: the launchd agent is already serving,
-          # so `app` must pair against it (no second server) and exit 0.
-          before="$(pgrep -fc 'cg-researcher.*serve' || true)"
+          # Exercise `ui --print` from the bundle against the launchd listener.
+          # This is pairing coverage; double-click `app` startup is separate.
+          before="$(lsof -nP -t -iTCP:8797 -sTCP:LISTEN | sort -u)"
+          [[ -n "$before" ]]
           dist/cg-researcher.app/Contents/MacOS/cg-researcher --home "$CG_HOME" ui --print | grep -q '/#p='
-          after="$(pgrep -fc 'cg-researcher.*serve' || true)"
+          after="$(lsof -nP -t -iTCP:8797 -sTCP:LISTEN | sort -u)"
           [[ "$before" == "$after" ]]
       - name: uninstall --purge removes agent, binaries and data
         if: always()
