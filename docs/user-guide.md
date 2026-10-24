@@ -52,6 +52,10 @@ to answer anyway locally, use the external model (if enabled), or stop.
 2. Paste the key in UI → Keys (stored in the Keychain as `cg-researcher/anthropic_api_key` or `cg-researcher/xai_api_key`).
 3. Consent per query (CLI `y`, UI "External", `/ext`).
 
+`external.model` must belong to `external.provider` (`claude-*` for anthropic, `grok-*` for xai) or be
+empty for the provider default. A mismatch is refused at load, by `config set` and by the UI (HTTP 400),
+so a provider switch can't silently keep the other vendor's model id.
+
 Rules (`[external.rules]`) ship closed: no local context, attachments or images leave the machine.
 Each loosening asks for confirmation and is written to the audit log.
 
