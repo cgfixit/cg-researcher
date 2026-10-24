@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`cg-researcher` (formerly `cg-agent`): a local-first research assistant in Rust. RAG over a notes corpus, a loopback OpenAI-compatible model (Ollama / LM Studio / llama.cpp / vLLM), and an optional, triple-gated external model (Claude / Grok). macOS 14+ is the product target; Linux builds and passes tests but is best-effort (no Keychain, no launchd, installer refuses to run).
+`cg-researcher` (formerly `cg-agent`): a local-first research assistant in Rust. RAG over a notes corpus, a loopback OpenAI-compatible model (Ollama / LM Studio / llama.cpp / vLLM), and an optional, triple-gated external model (Claude / Grok). The product target is Apple Silicon (arm64) on macOS 14+, including macOS 27 "Golden Gate" (Apple silicon only, last release with Rosetta). CI covers macOS 15 and `macos-latest` (macOS 26 today; it becomes 27 when GitHub flips the label). Intel is best-effort and only on macOS 26 or older. Linux builds and passes tests but is best-effort (no Keychain, no launchd, installer refuses to run).
 
 The default branch is `main`. CI, Dependabot and the workflows in `.github/` target it.
 
@@ -57,6 +57,10 @@ Nothing from a data directory ever enters git. `scripts/lint.sh --hygiene` enfor
 - `security/` holds audit deliverables (report, SARIF, diff), not credentials or scan logs.
 
 Lints: `unsafe_code = "forbid"` workspace-wide; `clippy::unwrap_used` warns, `dbg_macro` denies. Clippy runs with `-D warnings`, so avoid `unwrap()` in non-test code.
+
+`scripts/install.sh` needs Xcode CLT and a native arm64 rustup (it rejects Rosetta shells and Rust older than 1.90). Nothing in this sandbox can run it, so changes to it, Keychain code or the launchd plists are unverified until a Mac or the macOS CI runs them.
+
+Repo skills in `.claude/skills/`: `verify` (local gate, lint first), `invariants-check` (diff vs `INVARIANTS.md`), `optimizer` (measure-first perf and size work that must not weaken an invariant).
 
 ## Architecture
 

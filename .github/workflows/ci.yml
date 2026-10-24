@@ -27,8 +27,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macos-15 = Sequoia arm64, macos-26 = Tahoe arm64 (macos-latest since 2026-07).
-        os: [macos-15, macos-26]
+        # macos-latest follows GitHub's default Apple Silicon image, so it moves to macOS 27
+        # (Golden Gate) on its own once GitHub flips it; today it is macOS 26 (Tahoe) arm64.
+        os: [macos-15, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
