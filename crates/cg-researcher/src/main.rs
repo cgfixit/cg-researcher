@@ -439,6 +439,8 @@ async fn netviewer(home: &std::path::Path, cli: bool) -> anyhow::Result<()> {
 }
 
 #[cfg(test)]
+mod docs_cli;
+#[cfg(test)]
 mod tests;
 
 /// True when this binary is `<X>.app/Contents/MacOS/<exe>`.
