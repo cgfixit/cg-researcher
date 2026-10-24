@@ -1,15 +1,27 @@
 name: release
-# On a v* tag (or manual run):
+# Three ways in:
+#   * v* tag: build, then `publish` creates a DRAFT release for human review.
+#   * daily schedule (09:07 America/New_York, see `gate`): if the head of main has
+#     no tag and no successful run of this workflow yet (nobody cut a release or
+#     ran it by hand for that merge), build and publish a `nightly-YYYYMMDD-<sha>`
+#     PRERELEASE (never "Latest"). Same artifacts as a tag release, unreviewed.
+#   * manual run: build and upload artifacts only, no release.
+# Artifacts:
 #   * app-arm64: Apple Silicon cg-researcher.app (aarch64-apple-darwin), zipped
 #     with ditto + SHA-256; build provenance attested when the repo is public
 #     (GitHub artifact attestations need Enterprise Cloud for private repos).
 #   * universal: arm64+x86_64 CLI tarball for install-from-binary users.
-#   * publish: tag runs only — a DRAFT release for human review.
 # Ad-hoc signing is NOT Developer ID / notarization. Downloaded copies get
 # quarantined by Gatekeeper; install.sh from source remains the supported path.
 on:
   push:
     tags: ["v*"]
+  schedule:
+    # Actions cron is UTC only. Both fire; `gate` keeps the one where it is 09:xx
+    # in America/New_York (13:07 UTC under EDT, 14:07 UTC under EST). Off the hour
+    # because GitHub delays runs queued at :00.
+    - cron: "7 13 * * *"
+    - cron: "7 14 * * *"
   workflow_dispatch:
 permissions:
   contents: read
@@ -17,7 +29,66 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  gate:
+    name: decide what this run publishes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      go: ${{ steps.decide.outputs.go }}
+      kind: ${{ steps.decide.outputs.kind }}
+      tag: ${{ steps.decide.outputs.tag }}
+      public: ${{ steps.decide.outputs.public }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          fetch-tags: true
+      - id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          public=false
+          [[ "$(gh api "repos/$REPO" --jq .private)" == false ]] && public=true
+          go=false kind=none tag=""
+          case "$EVENT" in
+            push)
+              go=true kind=tag tag="$REF_NAME" ;;
+            workflow_dispatch)
+              go=true kind=build ;;
+            schedule)
+              hour="$(TZ=America/New_York date +%H)"
+              if [[ "$hour" != "09" ]]; then
+                echo "schedule: $hour:xx in America/New_York, not the 09:xx run; skipping"
+              else
+                tags="$(git tag --points-at "$SHA")"
+                runs="$(gh run list --repo "$REPO" --workflow release.yml --commit "$SHA" \
+                  --status success --json databaseId --jq length)"
+                if [[ -n "$tags" ]]; then
+                  echo "main@${SHA:0:7} already tagged ($tags); nothing to cut"
+                elif [[ "$runs" != 0 ]]; then
+                  echo "release.yml already succeeded $runs time(s) on main@${SHA:0:7}; nothing to cut"
+                else
+                  go=true kind=nightly tag="nightly-$(date -u +%Y%m%d)-${SHA:0:7}"
+                fi
+              fi ;;
+          esac
+          echo "event=$EVENT go=$go kind=$kind tag=$tag public=$public"
+          {
+            echo "go=$go"; echo "kind=$kind"; echo "tag=$tag"; echo "public=$public"
+          } >> "$GITHUB_OUTPUT"
+
   app-arm64:
+    needs: [gate]
+    if: needs.gate.outputs.go == 'true'
     runs-on: macos-15 # arm64 runner
     timeout-minutes: 45
     permissions:
@@ -52,7 +123,7 @@ jobs:
           rm -rf "$app"; ditto -x -k dist/cg-researcher-macos-arm64.app.zip dist/
           codesign --verify --strict --deep "$app"
       - name: attest build provenance (public repos only)
-        if: ${{ !github.event.repository.private }}
+        if: needs.gate.outputs.public == 'true'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: dist/cg-researcher-macos-arm64.app.zip
@@ -63,6 +134,8 @@ jobs:
           if-no-files-found: error
 
   universal:
+    needs: [gate]
+    if: needs.gate.outputs.go == 'true'
     runs-on: macos-15
     timeout-minutes: 60
     steps:
@@ -114,8 +187,8 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: [app-arm64, universal]
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [gate, app-arm64, universal]
+    if: needs.gate.outputs.kind == 'tag' || needs.gate.outputs.kind == 'nightly'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -129,13 +202,27 @@ jobs:
         run: |
           set -euo pipefail
           for f in *.sha256; do sha256sum -c "$f"; done
-      - name: draft release (review before publishing)
+      - name: draft release (tag) or nightly prerelease (schedule)
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          KIND: ${{ needs.gate.outputs.kind }}
+          TAG: ${{ needs.gate.outputs.tag }}
+          SHA: ${{ github.sha }}
           REPO: ${{ github.repository }}
         run: |
-          gh release create "$TAG" --repo "$REPO" --draft --verify-tag --title "$TAG" \
-            --notes "Apple Silicon app (ad-hoc signed, not notarized) + universal CLI. Verify SHA-256 before use." \
-            cg-researcher-macos-arm64.app.zip cg-researcher-macos-arm64.app.zip.sha256 \
-            cg-researcher-macos-universal.tar.gz cg-researcher-macos-universal.tar.gz.sha256
+          set -euo pipefail
+          files=(cg-researcher-macos-arm64.app.zip cg-researcher-macos-arm64.app.zip.sha256
+                 cg-researcher-macos-universal.tar.gz cg-researcher-macos-universal.tar.gz.sha256)
+          case "$KIND" in
+            tag)
+              gh release create "$TAG" --repo "$REPO" --draft --verify-tag --title "$TAG" \
+                --notes "Apple Silicon app (ad-hoc signed, not notarized) + universal CLI. Verify SHA-256 before use." \
+                "${files[@]}" ;;
+            nightly)
+              # Creates the lightweight tag at $SHA. Prerelease, never "Latest": nobody reviewed it.
+              gh release create "$TAG" --repo "$REPO" --target "$SHA" --prerelease --latest=false \
+                --title "$TAG (unreviewed nightly from main)" \
+                --notes "Automatic daily build of main @ $SHA: nobody cut a release or ran release.yml for this merge. Apple Silicon app (ad-hoc signed, not notarized) + universal CLI. Verify SHA-256 before use." \
+                "${files[@]}" ;;
+            *) echo "publish ran with kind=$KIND"; exit 1 ;;
+          esac
