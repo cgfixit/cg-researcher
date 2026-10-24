@@ -1,7 +1,7 @@
 name: supply-chain
 on:
   push:
-    branches: ["cg/main"]
+    branches: ["main"]
     paths: ["**/Cargo.toml", "Cargo.lock", "deny.toml", ".github/workflows/audit.yml"]
   pull_request:
   schedule:

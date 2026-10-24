@@ -4,7 +4,7 @@ name: ci
 # lint, secret scan) stay on Linux because a macOS minute costs ~10x more.
 on:
   push:
-    branches: ["cg/main"]
+    branches: ["main"]
     paths-ignore: ["**.md", "LICENSE"]
   pull_request:
     paths-ignore: ["**.md", "LICENSE"]
