@@ -1,0 +1,12 @@
+{
+  "name": "cg-researcher-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Browser end-to-end tests for the cg-researcher web UI (Chromium + WebKit).",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1"
+  }
+}

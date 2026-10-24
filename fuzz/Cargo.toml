@@ -1,0 +1,34 @@
+# Coverage-guided fuzzing of the parsers that take untrusted input.
+# Not a workspace member (cargo-fuzz needs nightly + sanitizer flags);
+# run with `cargo +nightly fuzz run <target>` from the repo root.
+[package]
+name = "cg-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+base64 = "0.23.1"
+libfuzzer-sys = "0.4.13"
+cg-core = { path = "../crates/cg-core" }
+
+# Keep this crate out of the main workspace.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "attachments"
+path = "fuzz_targets/attachments.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sanitizer"
+path = "fuzz_targets/sanitizer.rs"
+test = false
+doc = false
+bench = false
