@@ -46,11 +46,12 @@ tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 url = "2.5.8"
 zip = { version = "9.0.5", default-features = false }
-# workspace members
-cg-audit = { path = "crates/cg-audit" }
-cg-connectors = { path = "crates/cg-connectors" }
-cg-core = { path = "crates/cg-core" }
-cg-graph = { path = "crates/cg-graph" }
+# workspace members. Keep `version`: cargo-deny (`wildcards = "deny"`) treats a
+# path-only dependency as a wildcard.
+cg-audit = { version = "0.1.0", path = "crates/cg-audit" }
+cg-connectors = { version = "0.1.0", path = "crates/cg-connectors" }
+cg-core = { version = "0.1.0", path = "crates/cg-core" }
+cg-graph = { version = "0.1.0", path = "crates/cg-graph" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
