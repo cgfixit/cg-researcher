@@ -32,6 +32,8 @@ externally. cg-researcher enforces this in the graph, not in the prompt:
   separate label) now catches removal of whole trailing records. Limit: a same-user attacker who can
   read `audit.key` can forge a head for a truncated log. Detecting that needs an off-host anchor (copy
   `audit tail -n 1` elsewhere).
+- **Rename leftovers:** Keychain items under the old `cg-agent` service are not migrated (that would
+  mean reading secrets in a script); `uninstall.sh --purge` deletes them.
 - **Keychain prompts after rebuilds:** binaries are ad-hoc signed, not Developer-ID signed, so each
   rebuild changes the code identity. macOS then shows an "Always Allow" prompt once per Keychain item.
   There is no notarization.
@@ -47,6 +49,16 @@ externally. cg-researcher enforces this in the graph, not in the prompt:
 - **Pattern-based injection filtering** is a speed bump, not a boundary. The boundaries are the
   tool gate, taint, and origin rules above.
 - `/health` is unauthenticated and reveals only `{ok, local_model}`.
+
+## Supply chain
+
+- The workspace forbids `unsafe` (`unsafe_code = "forbid"`); the only C is SQLite itself
+  (rusqlite `bundled`, with FTS5). No SQLite extensions are loaded.
+- sqlite-vec was evaluated and rejected: pre-1.0 C (~10k lines), a past heap overflow
+  (CVE-2024-46488, npy parsing, fixed in 0.1.3), a null `pzErrMsg` write in `sqlite3_vec_init`, and
+  brute-force KNN that gives no speed advantage over the in-RAM Rust scan at this scale.
+- Release artifacts: ad-hoc signed, SHA-256 published, draft-only, build provenance attested when the
+  repository is public.
 
 ## Web UI threat model
 
