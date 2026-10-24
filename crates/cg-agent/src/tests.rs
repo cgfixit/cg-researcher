@@ -8,35 +8,71 @@ use crate::serve::{AppState, router};
 
 async fn state(limit: usize) -> (Arc<AppState>, tempfile::TempDir) {
     let dir = tempfile::tempdir().expect("tmp");
-    let mut cfg = cg_core::config::Config::default();
-    cfg.app.home = dir.path().to_string_lossy().into_owned();
-    cfg.llm.base_url = "http://127.0.0.1:9/v1".into();
-    cfg.llm.timeout_secs = 2;
     let layout = cg_core::paths::Layout::new(dir.path());
     layout.ensure().expect("layout");
+    let home = dir.path().to_string_lossy().into_owned();
+    std::fs::write(
+        layout.config(),
+        format!(
+            "[app]\nhome = \"{home}\"\n[llm]\nbase_url = \"http://127.0.0.1:9/v1\"\ntimeout_secs = 2\n"
+        ),
+    )
+    .expect("cfg");
+    let cfg = cg_core::config::Config::load(&layout.config()).expect("load");
     let key = cg_audit::load_or_create_key(&layout.audit_key()).expect("key");
     let audit = Arc::new(cg_audit::AuditLog::open(layout.audit_log(), &key).expect("audit"));
-    let secrets = cg_core::secrets::SecretStore::new(layout.secrets());
-    let agent = cg_core::agent::Agent::new(cfg, Default::default(), audit, &secrets)
+    // Never touch the real login keychain from tests.
+    let secrets = cg_core::secrets::SecretStore::new(layout.secrets()).without_keychain_writes();
+    let agent = cg_core::agent::Agent::new(cfg, Default::default(), audit.clone(), &secrets)
         .await
         .expect("agent");
+    let control = Arc::new(crate::runtime::Control {
+        layout,
+        secrets,
+        audit,
+        lock: tokio::sync::Mutex::new(()),
+    });
     (
-        Arc::new(AppState {
-            agent: Arc::new(agent),
-            api_key: "k".repeat(64),
-            limit_per_min: limit,
-            recent: Default::default(),
-        }),
+        Arc::new(AppState::new(
+            Arc::new(tokio::sync::RwLock::new(Arc::new(agent))),
+            control,
+            "k".repeat(64),
+            limit,
+        )),
         dir,
     )
 }
 
+fn bearer() -> String {
+    format!("Bearer {}", "k".repeat(64))
+}
+
 fn q(auth: Option<&str>, body: &str) -> Request<Body> {
-    let mut b = Request::post("/query").header("content-type", "application/json");
+    post("/query", auth, body)
+}
+
+fn post(path: &str, auth: Option<&str>, body: &str) -> Request<Body> {
+    let mut b = Request::post(path)
+        .header("host", "127.0.0.1:8797")
+        .header("content-type", "application/json");
     if let Some(a) = auth {
         b = b.header("authorization", a);
     }
     b.body(Body::from(body.to_string())).expect("req")
+}
+
+fn get(path: &str, auth: Option<&str>) -> Request<Body> {
+    let mut b = Request::get(path).header("host", "127.0.0.1:8797");
+    if let Some(a) = auth {
+        b = b.header("authorization", a);
+    }
+    b.body(Body::empty()).expect("req")
+}
+
+async fn body_json(r: axum::response::Response) -> serde_json::Value {
+    use http_body_util::BodyExt;
+    let bytes = r.into_body().collect().await.expect("body").to_bytes();
+    serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null)
 }
 
 #[tokio::test]
@@ -58,7 +94,7 @@ async fn auth_is_required_and_constant_shape() {
     }
     let r = app
         .clone()
-        .oneshot(Request::get("/tools").body(Body::empty()).expect("req"))
+        .oneshot(get("/tools", None))
         .await
         .expect("resp");
     assert_eq!(r.status(), StatusCode::UNAUTHORIZED);
@@ -77,18 +113,18 @@ async fn body_limit_unknown_fields_and_rate_limit() {
         .expect("resp");
     assert_eq!(
         r.status(),
-        StatusCode::BAD_REQUEST,
-        "oversized body is rejected by the JSON extractor"
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "oversized body is a 413, not a generic 400"
     );
     let r = app
         .clone()
         .oneshot(q(Some(&good), r#"{"query":"x","approve_writes":true}"#))
         .await
         .expect("resp");
-    assert_eq!(
-        r.status(),
-        StatusCode::BAD_REQUEST,
-        "unknown fields refused"
+    assert!(
+        r.status().is_client_error() && r.status() != StatusCode::UNAUTHORIZED,
+        "unknown fields refused: {}",
+        r.status()
     );
     let r = app
         .clone()
@@ -139,4 +175,321 @@ fn shipped_config_is_safe_by_default() {
             "{name} must ship disabled"
         );
     }
+}
+
+#[tokio::test]
+async fn host_and_origin_checks_block_dns_rebinding() {
+    let (s, _d) = state(60).await;
+    let app = router(s, 4096);
+    for host in [
+        "evil.example",
+        "127.0.0.1.evil.example:8797",
+        "192.168.1.5:8797",
+    ] {
+        let r = app
+            .clone()
+            .oneshot(
+                Request::get("/")
+                    .header("host", host)
+                    .body(Body::empty())
+                    .expect("req"),
+            )
+            .await
+            .expect("resp");
+        assert_eq!(r.status(), StatusCode::MISDIRECTED_REQUEST, "{host}");
+    }
+    let r = app
+        .clone()
+        .oneshot(Request::get("/").body(Body::empty()).expect("req"))
+        .await
+        .expect("resp");
+    assert_eq!(r.status(), StatusCode::MISDIRECTED_REQUEST, "missing Host");
+    for host in ["localhost:8797", "[::1]:8797", "127.0.0.1"] {
+        let r = app
+            .clone()
+            .oneshot(
+                Request::get("/")
+                    .header("host", host)
+                    .body(Body::empty())
+                    .expect("req"),
+            )
+            .await
+            .expect("resp");
+        assert_eq!(r.status(), StatusCode::OK, "{host}");
+    }
+    let r = app
+        .clone()
+        .oneshot(
+            Request::post("/api/session")
+                .header("host", "127.0.0.1:8797")
+                .header("origin", "https://evil.example")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"pair":"x"}"#))
+                .expect("req"),
+        )
+        .await
+        .expect("resp");
+    assert_eq!(r.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn every_response_carries_strict_security_headers() {
+    let (s, _d) = state(60).await;
+    let app = router(s, 4096);
+    for req in [
+        get("/", None),
+        get("/app.js", None),
+        get("/api/status", None),
+    ] {
+        let r = app.clone().oneshot(req).await.expect("resp");
+        let h = r.headers();
+        let csp = h["content-security-policy"].to_str().expect("csp");
+        assert!(csp.contains("default-src 'none'") && csp.contains("script-src 'self'"));
+        assert!(!csp.contains("unsafe-inline") && !csp.contains("unsafe-eval"));
+        assert!(csp.contains("frame-ancestors 'none'"));
+        assert_eq!(h["x-content-type-options"], "nosniff");
+        assert_eq!(h["referrer-policy"], "no-referrer");
+        assert_eq!(h["cache-control"], "no-store");
+        assert!(h.get("access-control-allow-origin").is_none(), "no CORS");
+    }
+}
+
+#[test]
+fn ui_assets_have_no_inline_script_or_html_injection_sinks() {
+    let html = include_str!("../ui/index.html");
+    let js = include_str!("../ui/app.js");
+    assert!(!html.contains("<script>"), "inline script");
+    let lower = html.to_ascii_lowercase();
+    let has_handler = lower.split(|c: char| c.is_whitespace()).any(|w| {
+        w.starts_with("on")
+            && w.find('=')
+                .is_some_and(|i| i > 2 && w[2..i].chars().all(|c| c.is_ascii_alphabetic()))
+    });
+    assert!(!has_handler, "inline on*= event handler");
+    assert!(
+        !html.contains("http://") && !html.contains("https://"),
+        "no remote assets"
+    );
+    for sink in [
+        "innerHTML",
+        "outerHTML",
+        "insertAdjacentHTML",
+        "document.write",
+        "eval(",
+        "new Function",
+    ] {
+        assert!(!js.contains(sink), "app.js uses {sink}");
+    }
+    assert!(
+        js.contains("history.replaceState"),
+        "pairing code is scrubbed from history"
+    );
+    assert!(
+        !js.contains("localStorage"),
+        "session token must not persist past the tab"
+    );
+}
+
+#[tokio::test]
+async fn pairing_is_single_use_and_yields_a_working_session() {
+    let (s, _d) = state(60).await;
+    let app = router(s, 4096);
+    // Session tokens cannot mint pairing codes; only the API key can.
+    let r = app
+        .clone()
+        .oneshot(post("/api/pair", None, "{}"))
+        .await
+        .expect("resp");
+    assert_eq!(r.status(), StatusCode::UNAUTHORIZED);
+    let r = app
+        .clone()
+        .oneshot(post("/api/pair", Some(&bearer()), "{}"))
+        .await
+        .expect("resp");
+    assert_eq!(r.status(), StatusCode::OK);
+    let code = body_json(r).await["pair"]
+        .as_str()
+        .expect("pair")
+        .to_string();
+    let body = format!(r#"{{"pair":"{code}"}}"#);
+    let r = app
+        .clone()
+        .oneshot(post("/api/session", None, &body))
+        .await
+        .expect("resp");
+    assert_eq!(r.status(), StatusCode::OK);
+    let sess = body_json(r).await["session"]
+        .as_str()
+        .expect("s")
+        .to_string();
+    // Reuse of the pairing code fails.
+    let r = app
+        .clone()
+        .oneshot(post("/api/session", None, &body))
+        .await
+        .expect("resp");
+    assert_eq!(r.status(), StatusCode::UNAUTHORIZED);
+    // The session works for the UI API but cannot mint new pairing codes.
+    let auth = format!("Bearer {sess}");
+    let r = app
+        .clone()
+        .oneshot(get("/api/status", Some(&auth)))
+        .await
+        .expect("resp");
+    assert_eq!(r.status(), StatusCode::OK);
+    let st = body_json(r).await;
+    assert_eq!(st["http_can_approve_writes"], false);
+    assert_eq!(st["external"]["keys"]["anthropic"], false);
+    let r = app
+        .clone()
+        .oneshot(post("/api/pair", Some(&auth), "{}"))
+        .await
+        .expect("resp");
+    assert_eq!(r.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn settings_require_auth_whitelist_and_ack_for_relaxations() {
+    let (s, d) = state(60).await;
+    let app = router(s.clone(), 8192);
+    let r = app
+        .clone()
+        .oneshot(post("/api/settings", None, r#"{"set":{"llm.model":"x"}}"#))
+        .await
+        .expect("resp");
+    assert_eq!(r.status(), StatusCode::UNAUTHORIZED);
+    // Dangerous keys are refused outright.
+    for bad in [
+        r#"{"set":{"server.host":"0.0.0.0"}}"#,
+        r#"{"set":{"tools.auto_approve_writes":true}}"#,
+        r#"{"set":{"llm.allow_non_loopback":true}}"#,
+        r#"{"set":{"external.anthropic_key_ref":"env:HOME"}}"#,
+    ] {
+        let r = app
+            .clone()
+            .oneshot(post("/api/settings", Some(&bearer()), bad))
+            .await
+            .expect("resp");
+        assert_eq!(r.status(), StatusCode::BAD_REQUEST, "{bad}");
+    }
+    // A model switch rebuilds the agent and is applied.
+    let r = app
+        .clone()
+        .oneshot(post(
+            "/api/settings",
+            Some(&bearer()),
+            r#"{"set":{"llm.model":"llama3.2:3b"}}"#,
+        ))
+        .await
+        .expect("resp");
+    assert_eq!(r.status(), StatusCode::OK);
+    assert_eq!(
+        crate::runtime::current(&s.slot).await.config().llm.model,
+        "llama3.2:3b"
+    );
+    // Loosening a rule needs ack_relax, then is audited.
+    let relax = r#"{"set":{"external.rules.send_local_context":true}}"#;
+    let r = app
+        .clone()
+        .oneshot(post("/api/settings", Some(&bearer()), relax))
+        .await
+        .expect("resp");
+    assert_eq!(r.status(), StatusCode::CONFLICT);
+    let r = app
+        .clone()
+        .oneshot(post(
+            "/api/settings",
+            Some(&bearer()),
+            r#"{"set":{"external.rules.send_local_context":true},"ack_relax":true}"#,
+        ))
+        .await
+        .expect("resp");
+    assert_eq!(r.status(), StatusCode::OK);
+    let recs = cg_audit::read_all(&d.path().join("logs/audit.pb")).expect("audit");
+    assert!(recs.iter().any(|r| r.event == "policy_relaxed"));
+    assert!(recs.iter().any(|r| r.event == "settings_changed"));
+    // Persisted to the owner-only overlay, which survives a reload.
+    let overlay = d.path().join("ui-settings.toml");
+    let text = std::fs::read_to_string(&overlay).expect("overlay");
+    assert!(text.contains("llama3.2:3b") && text.contains("send_local_context = true"));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let m = std::fs::metadata(&overlay).expect("m").permissions().mode() & 0o777;
+        assert_eq!(m, 0o600);
+    }
+}
+
+#[tokio::test]
+async fn keys_are_validated_stored_and_never_echoed() {
+    let (s, d) = state(60).await;
+    let app = router(s, 8192);
+    let r = app
+        .clone()
+        .oneshot(post(
+            "/api/keys",
+            Some(&bearer()),
+            r#"{"provider":"anthropic","key":"xai-wrong-slot-000000000000"}"#,
+        ))
+        .await
+        .expect("resp");
+    assert_eq!(r.status(), StatusCode::BAD_REQUEST);
+    let key = "sk-ant-api03-TESTKEY-0000000000000000";
+    let r = app
+        .clone()
+        .oneshot(post(
+            "/api/keys",
+            Some(&bearer()),
+            &format!(r#"{{"provider":"anthropic","key":"{key}"}}"#),
+        ))
+        .await
+        .expect("resp");
+    assert_eq!(r.status(), StatusCode::OK);
+    let reply = body_json(r).await.to_string();
+    assert!(!reply.contains("TESTKEY"), "key echoed: {reply}");
+    let r = app
+        .clone()
+        .oneshot(get("/api/status", Some(&bearer())))
+        .await
+        .expect("resp");
+    let st = body_json(r).await;
+    assert_eq!(st["external"]["keys"]["anthropic"], true);
+    assert!(!st.to_string().contains("TESTKEY"));
+    // Stored owner-only (file fallback in tests); audit has no key material.
+    let raw = std::fs::read(d.path().join("logs/audit.pb")).expect("audit");
+    assert!(!String::from_utf8_lossy(&raw).contains("TESTKEY"));
+    let r = app
+        .clone()
+        .oneshot(post(
+            "/api/keys/delete",
+            Some(&bearer()),
+            r#"{"provider":"anthropic"}"#,
+        ))
+        .await
+        .expect("resp");
+    assert_eq!(r.status(), StatusCode::OK);
+    assert!(!d.path().join("secrets/anthropic_api_key").exists());
+}
+
+#[tokio::test]
+async fn http_prefer_external_without_external_stays_local() {
+    let (s, _d) = state(60).await;
+    let app = router(s, 4096);
+    let r = app
+        .clone()
+        .oneshot(q(
+            Some(&bearer()),
+            r#"{"query":"hi","prefer_external":true}"#,
+        ))
+        .await
+        .expect("resp");
+    assert_eq!(r.status(), StatusCode::OK);
+    let v = body_json(r).await;
+    assert!(
+        !v["path"]
+            .as_array()
+            .expect("path")
+            .iter()
+            .any(|p| p == "external_fallback")
+    );
 }

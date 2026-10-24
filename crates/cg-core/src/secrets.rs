@@ -64,6 +64,9 @@ impl Redactor {
 pub struct SecretStore {
     secrets_dir: PathBuf,
     op_path: Option<PathBuf>,
+    /// Write to the Keychain (macOS default). Tests turn this off so they
+    /// never touch the developer's or CI runner's login keychain.
+    keychain_writes: bool,
 }
 
 /// Wrapper that never prints its contents.
@@ -100,7 +103,14 @@ impl SecretStore {
         Self {
             secrets_dir: secrets_dir.into(),
             op_path: find_op(),
+            keychain_writes: cfg!(target_os = "macos"),
         }
+    }
+
+    /// Store and delete via owner-only files only (tests, headless CI).
+    pub fn without_keychain_writes(mut self) -> Self {
+        self.keychain_writes = false;
+        self
     }
 
     pub fn with_op_path(mut self, p: Option<PathBuf>) -> Self {
@@ -145,16 +155,15 @@ impl SecretStore {
             String::from_utf8(out.stdout).map_err(|_| SecretError::Backend("non-utf8".into()))?
         } else if let Some(rest) = r.strip_prefix("keychain:") {
             let (service, account) = rest.split_once('/').ok_or(SecretError::Scheme)?;
-            let out = clean_command(Path::new("/usr/bin/security"), &[])
-                .args(["find-generic-password", "-s", service, "-a", account, "-w"])
-                .output()
+            let (svc, acct) = (service.to_string(), account.to_string());
+            // Security.framework may block on a user ACL prompt; keep it off the runtime.
+            tokio::task::spawn_blocking(move || crate::keychain::get(&svc, &acct))
                 .await
-                .map_err(|e| SecretError::Backend(e.to_string()))?;
-            if !out.status.success() {
-                return Err(SecretError::Missing(rest.into()));
-            }
-            String::from_utf8(out.stdout)
-                .map_err(|_| SecretError::Backend("non-utf8".into()))?
+                .map_err(|e| SecretError::Backend(e.to_string()))?
+                .map_err(|e| match e {
+                    crate::keychain::KeychainError::NotFound => SecretError::Missing(rest.into()),
+                    other => SecretError::Backend(other.to_string()),
+                })?
                 .trim_end()
                 .to_string()
         } else if let Some(rel) = r.strip_prefix("file:") {
@@ -177,25 +186,18 @@ impl SecretStore {
     /// macOS Keychain when available, else an owner-only file.
     pub async fn store(&self, name: &str, value: &str) -> Result<String, SecretError> {
         redactor().register(value);
-        if cfg!(target_os = "macos") && Path::new("/usr/bin/security").is_file() {
-            // `-w` on argv is visible to same-user `ps` for the call's lifetime;
-            // acceptable under the single-operator model, documented in SECURITY.md.
-            let st = clean_command(Path::new("/usr/bin/security"), &[])
-                .args([
-                    "add-generic-password",
-                    "-U",
-                    "-s",
-                    "cg-agent",
-                    "-a",
-                    name,
-                    "-w",
-                    value,
-                ])
-                .status()
-                .await
-                .map_err(|e| SecretError::Backend(e.to_string()))?;
-            if st.success() {
-                return Ok(format!("keychain:cg-agent/{name}"));
+        if self.keychain_writes {
+            let (acct, val) = (name.to_string(), value.to_string());
+            let r = tokio::task::spawn_blocking(move || {
+                crate::keychain::set(KEYCHAIN_SERVICE, &acct, &val)
+            })
+            .await
+            .map_err(|e| SecretError::Backend(e.to_string()))?;
+            match r {
+                Ok(()) => return Ok(format!("keychain:{KEYCHAIN_SERVICE}/{name}")),
+                // Keychain unusable (e.g. locked in a headless/SSH session): fall back to
+                // the 0600 file, loudly. The returned ref tells the caller which was used.
+                Err(e) => tracing::warn!("keychain store failed ({e}); using owner-only file"),
             }
         }
         cg_audit::private_dir(&self.secrets_dir)
@@ -205,7 +207,32 @@ impl SecretStore {
             .map_err(|e| SecretError::Backend(e.to_string()))?;
         Ok(format!("file:{name}"))
     }
+
+    /// Remove a stored secret from wherever `store` may have put it.
+    pub async fn delete(&self, name: &str) -> Result<(), SecretError> {
+        if self.keychain_writes {
+            let acct = name.to_string();
+            let r = tokio::task::spawn_blocking(move || {
+                crate::keychain::delete(KEYCHAIN_SERVICE, &acct)
+            })
+            .await
+            .map_err(|e| SecretError::Backend(e.to_string()))?;
+            match r {
+                Ok(()) | Err(crate::keychain::KeychainError::NotFound) => {}
+                Err(e) => return Err(SecretError::Backend(e.to_string())),
+            }
+        }
+        let p = crate::paths::confined(&self.secrets_dir, name).ok_or(SecretError::Scheme)?;
+        match std::fs::remove_file(&p) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(SecretError::Backend(e.to_string())),
+        }
+    }
 }
+
+/// Keychain service name for every item cg-agent creates.
+pub const KEYCHAIN_SERVICE: &str = "cg-agent";
 
 #[cfg(test)]
 mod tests {

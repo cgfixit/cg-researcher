@@ -3,6 +3,10 @@ on:
   push:
     branches: ["cg/main"]
   pull_request:
+  # Weekly full-history rescan (new gitleaks rules can match old commits).
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

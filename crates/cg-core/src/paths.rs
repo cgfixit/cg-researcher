@@ -43,6 +43,10 @@ impl Layout {
     pub fn index_db(&self) -> PathBuf {
         self.home.join("index").join("rag.sqlite3")
     }
+    /// UI settings overlay (whitelisted keys only, owner-only file).
+    pub fn settings(&self) -> PathBuf {
+        self.home.join("ui-settings.toml")
+    }
     pub fn state(&self) -> PathBuf {
         self.home.join("state")
     }

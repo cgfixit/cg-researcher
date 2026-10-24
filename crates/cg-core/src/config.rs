@@ -138,19 +138,80 @@ impl Default for ToolPolicyConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct ExternalConfig {
+    /// Gate 2 of 3 (gate 1 is `app.mode = "hybrid"`, gate 3 is per-query).
     pub enabled: bool,
+    /// `anthropic` | `xai`.
+    pub provider: crate::external::Provider,
+    /// Empty means the provider's default model.
     pub model: String,
-    pub api_key_ref: String,
-    /// Never ship retrieved corpus text to the external provider. Ships false.
-    pub send_local_context: bool,
+    pub anthropic_key_ref: String,
+    pub xai_key_ref: String,
+    /// `global` (api.x.ai) or `us` (us.api.x.ai).
+    pub xai_region: String,
+    pub timeout_secs: u64,
+    pub rules: ExternalRules,
 }
 impl Default for ExternalConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            model: "grok-4".into(),
-            api_key_ref: "env:XAI_API_KEY".into(),
+            provider: crate::external::Provider::Anthropic,
+            model: String::new(),
+            anthropic_key_ref: "keychain:cg-agent/anthropic_api_key".into(),
+            xai_key_ref: "keychain:cg-agent/xai_api_key".into(),
+            xai_region: "global".into(),
+            timeout_secs: 120,
+            rules: ExternalRules::default(),
+        }
+    }
+}
+impl ExternalConfig {
+    pub fn effective_model(&self) -> String {
+        if self.model.is_empty() {
+            self.provider.default_model().into()
+        } else {
+            self.model.clone()
+        }
+    }
+    pub fn key_ref(&self) -> &str {
+        match self.provider {
+            crate::external::Provider::Anthropic => &self.anthropic_key_ref,
+            crate::external::Provider::Xai => &self.xai_key_ref,
+        }
+    }
+}
+
+/// Rules enforced in the graph for every external call. All ship closed.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct ExternalRules {
+    /// Send sanitized top retrieval hits (wrapped as untrusted) with the query.
+    pub send_local_context: bool,
+    /// Let Telegram turns consent to egress. SMS can never consent.
+    pub allow_telegram: bool,
+    /// Forward PNG attachments (only if the model reports vision).
+    pub allow_images: bool,
+    /// Forward extracted Markdown/DOCX attachment text.
+    pub allow_attachment_text: bool,
+    pub max_calls_per_hour: u32,
+    pub max_calls_per_day: u32,
+    pub max_output_tokens: u32,
+    pub temperature: f32,
+    /// Hard cap on characters sent per call (query + context).
+    pub max_outbound_chars: usize,
+}
+impl Default for ExternalRules {
+    fn default() -> Self {
+        Self {
             send_local_context: false,
+            allow_telegram: false,
+            allow_images: false,
+            allow_attachment_text: false,
+            max_calls_per_hour: 20,
+            max_calls_per_day: 100,
+            max_output_tokens: 2_048,
+            temperature: 0.3,
+            max_outbound_chars: 24_000,
         }
     }
 }
@@ -222,6 +283,23 @@ impl Config {
         Self::from_toml(&text)
     }
 
+    /// Base config with the UI settings overlay deep-merged on top. The
+    /// overlay may only touch whitelisted keys; the merged result goes
+    /// through the same strict deserializer and `validate`.
+    pub fn load_with_overlay(path: &Path, overlay: Option<&Path>) -> anyhow::Result<Self> {
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| anyhow::anyhow!("cannot read config {}: {e}", path.display()))?;
+        let mut base: toml::Table = toml::from_str(&text)?;
+        if let Some(o) = overlay.filter(|o| o.is_file()) {
+            let ov: toml::Table = toml::from_str(&std::fs::read_to_string(o)?)?;
+            crate::settings::check_overlay(&ov)?;
+            crate::settings::merge(&mut base, &ov);
+        }
+        let cfg: Self = toml::Value::Table(base).try_into()?;
+        cfg.validate()?;
+        Ok(cfg)
+    }
+
     pub fn validate(&self) -> anyhow::Result<()> {
         let url = url::Url::parse(&self.llm.base_url)?;
         if !self.llm.allow_non_loopback && !crate::egress::is_loopback_url(&url) {
@@ -237,6 +315,43 @@ impl Config {
         if !host.is_loopback() && std::env::var("CG_ALLOW_NON_LOOPBACK_BIND").as_deref() != Ok("1")
         {
             anyhow::bail!("server.host must be loopback (CG_ALLOW_NON_LOOPBACK_BIND=1 overrides)");
+        }
+        anyhow::ensure!(
+            matches!(self.external.xai_region.as_str(), "global" | "us"),
+            "external.xai_region must be \"global\" or \"us\""
+        );
+        let r = &self.external.rules;
+        anyhow::ensure!(
+            r.max_calls_per_hour <= 1_000 && r.max_calls_per_day <= 10_000,
+            "external.rules call budgets are implausibly high"
+        );
+        anyhow::ensure!(
+            (1..=64_000).contains(&r.max_output_tokens),
+            "external.rules.max_output_tokens must be 1..=64000"
+        );
+        anyhow::ensure!(
+            r.temperature.is_finite() && (0.0..=2.0).contains(&r.temperature),
+            "external.rules.temperature must be 0..=2"
+        );
+        anyhow::ensure!(
+            (256..=400_000).contains(&r.max_outbound_chars),
+            "external.rules.max_outbound_chars must be 256..=400000"
+        );
+        anyhow::ensure!(
+            self.llm.temperature.is_finite() && (0.0..=2.0).contains(&self.llm.temperature),
+            "llm.temperature must be 0..=2"
+        );
+        for (k, v) in [
+            ("external.model", &self.external.model),
+            ("llm.model", &self.llm.model),
+            ("llm.vision_model", &self.llm.vision_model),
+        ] {
+            anyhow::ensure!(
+                v.len() <= 128
+                    && v.chars()
+                        .all(|c| c.is_ascii_alphanumeric() || "-._:/@".contains(c)),
+                "{k} has unexpected characters"
+            );
         }
         if self.rag.chunk_overlap >= self.rag.chunk_chars {
             anyhow::bail!("rag.chunk_overlap must be smaller than rag.chunk_chars");
@@ -280,7 +395,9 @@ mod tests {
         assert!(!c.external.enabled);
         assert!(!c.tools.auto_approve_writes);
         assert!(c.tools.remote_origins_read_only);
-        assert!(!c.external.send_local_context);
+        let r = &c.external.rules;
+        assert!(!r.send_local_context && !r.allow_telegram && !r.allow_images);
+        assert!(!r.allow_attachment_text);
     }
 
     #[test]

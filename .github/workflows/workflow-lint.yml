@@ -4,6 +4,10 @@ on:
     branches: ["cg/main"]
     paths: [".github/**", "scripts/**", "*.sh", "*.command"]
   pull_request:
+  # Weekly: new actionlint/zizmor audits can flag unchanged workflows.
+  schedule:
+    - cron: "29 5 * * 1"
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

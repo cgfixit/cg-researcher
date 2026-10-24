@@ -42,10 +42,28 @@ remote_origins_read_only = true  # Telegram/SMS turns get read tools only
 max_tool_output_chars = 12000
 
 [external]
-enabled = false           # gate 2 of 3; gate 3 is per-query confirmation
-model = "grok-4"
-api_key_ref = "env:XAI_API_KEY"
+# Triple gate (I3): app.mode = "hybrid" AND enabled = true build the client;
+# every call still needs per-query consent (CLI prompt, UI button, or an
+# explicit "ask external" from a local origin). Switch provider/model in the
+# web UI (`cg-agent ui`); autotune runs on every switch.
+enabled = false
+provider = "anthropic"    # anthropic | xai
+model = ""                # empty = provider default (claude-sonnet-5-5 / grok-4.7)
+anthropic_key_ref = "keychain:cg-agent/anthropic_api_key"
+xai_key_ref = "keychain:cg-agent/xai_api_key"
+xai_region = "global"     # global (api.x.ai) | us (us.api.x.ai)
+timeout_secs = 120
+
+[external.rules]          # all ship closed; loosening via the UI is audited
 send_local_context = false
+allow_attachment_text = false
+allow_images = false
+allow_telegram = false    # SMS can never consent, regardless
+max_calls_per_hour = 20
+max_calls_per_day = 100
+max_output_tokens = 2048
+temperature = 0.3
+max_outbound_chars = 24000
 
 [server]
 host = "127.0.0.1"
