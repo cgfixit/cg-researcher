@@ -20,6 +20,9 @@ function watch(page, browserName) {
 
 async function paired(page) {
   await page.goto(pairUrl());
+  // #q exists in the first HTML paint. Wait until the exchange stored a
+  // session, then until the composer is actually shown.
+  await page.waitForFunction(() => sessionStorage.getItem('cg-researcher-session'));
   await expect(page.locator('#q')).toBeVisible();
 }
 

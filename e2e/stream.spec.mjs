@@ -10,6 +10,7 @@ const pairUrl = () =>
 
 async function paired(page) {
   await page.goto(pairUrl());
+  await page.waitForFunction(() => sessionStorage.getItem('cg-researcher-session'));
   await expect(page.locator('#q')).toBeVisible();
 }
 

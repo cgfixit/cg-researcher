@@ -601,6 +601,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#refreshBtn').addEventListener('click', guard(refresh, '#verifyMsg'));
   $('#reindexBtn').addEventListener('click', guard(onReindex, '#verifyMsg'));
   $('#verifyBtn').addEventListener('click', guard(onVerify, '#verifyMsg'));
+  // Chat stays hidden until the single-use code is a session. The composer is
+  // otherwise usable during that exchange, and a submit with no token paints
+  // "not paired" (WebKit in CI wins that race).
   if (!(await pair())) { lock(); return; }
   document.body.classList.remove('locked');
   $('#locked').hidden = true;
