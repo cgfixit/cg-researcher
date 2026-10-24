@@ -85,7 +85,7 @@ manually altered browser session or fixture response.
 
 | Path | Evidence and result |
 | --- | --- |
-| Source and pairing verification | Rust 1.99.1 build, scoped clippy, formatting and JavaScript syntax checks passed at the gallery source. Earlier `cargo test --locked -p cg-researcher pairing` at c7b00b8: 2 passed. The label-only change leaves that policy code unchanged. |
+| Source and pairing verification | Rust 1.99.1 build, scoped clippy, formatting and JavaScript syntax checks passed at the gallery source. Earlier `cargo test --locked -p cg-researcher` (filter pairing) at c7b00b8: 2 passed. The label-only change leaves that policy code unchanged. |
 | Real provider and retrieval | Gallery-source init/index/serve/ui, corpus answer, attachment answer, autotune, rules save, invalid-key rejection, audit verification and restart invalidation passed through actual code/browser paths. |
 | Protected context copy | Real browser answer shows the badge and expected tooltip; actual CLI chat shows `protected context`. The existing browser regression now checks this copy; hosted execution remains blocked. |
 | Earlier candidate UI controls | At `40e5f3a`, model validation, provider selection, applying/restoring temperature, policy tightening, cancelling/accepting policy relaxation, status refresh/reindex, copying an answer and New chat were exercised. These earlier checks are not relabeled as reruns at the latest head. |
