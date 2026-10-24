@@ -2,7 +2,7 @@
 
 ## Threat model (single operator, own Mac)
 
-Platform: macOS 14+ is the target and the only supported install. Linux is best-effort for development and CI.
+Platform: Apple Silicon macOS 14+ (including macOS 27, which is Apple silicon only) is the target and the only supported install; Intel is best-effort on macOS 26 or older. Linux is best-effort for development and CI.
 
 Assets: corpus, mail/calendar data, OAuth refresh token, API keys, the ability to send mail or SMS.
 Adversaries: (1) content authors, meaning anyone who can put text in front of the model (web pages,
