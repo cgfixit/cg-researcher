@@ -94,7 +94,7 @@ and consent on **each** query (CLI `y`, the UI's "External" button, `/ext <quest
 single use). It then opens the browser on a URL whose `#fragment` carries the code: browsers never send
 fragments to servers, and the page wipes it from history. The page swaps the code for a 12-hour
 session token kept in `sessionStorage`. Tabs: Chat (local / auto / external), Models (switch +
-autotune), Rules, Keys, Status (graph, budgets, audit verify). The UI is compiled into the binary and
+autotune), Rules, Keys, Status (flow-ordered graph, budgets, audit verify, "Reindex corpus"). The UI is compiled into the binary and
 has no CDN or remote assets. It runs under a strict CSP (`default-src 'none'`, no inline script). The
 server answers only `Host: 127.0.0.1|localhost|[::1]` (DNS-rebinding guard) and refuses
 cross-origin requests. Settings changes are limited to a whitelist (model, rules, provider, keys).

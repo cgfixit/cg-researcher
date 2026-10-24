@@ -282,8 +282,20 @@ impl Agent {
     pub fn tool_specs(&self) -> Vec<ToolSpec> {
         self.deps.tools.specs()
     }
+    /// Node names in flow order (entry first, `audit_logger` last).
     pub fn graph_nodes(&self) -> Vec<&'static str> {
-        self.graph.node_names()
+        self.graph.flow_order()
+    }
+    /// `(node, successors)` in flow order, for the UI's graph view.
+    pub fn graph_edges(&self) -> Vec<(&'static str, Vec<&'static str>)> {
+        self.graph
+            .flow_order()
+            .into_iter()
+            .map(|n| (n, self.graph.successors(n)))
+            .collect()
+    }
+    pub fn corpus_dir(&self) -> std::path::PathBuf {
+        self.deps.cfg.corpus_dir()
     }
     pub fn indexed_chunks(&self) -> usize {
         self.deps.retriever.read().map(|r| r.len()).unwrap_or(0)

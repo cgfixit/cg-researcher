@@ -9,6 +9,7 @@
 <script src="/app.js" defer></script>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <header class="bar">
   <div class="brand"><span class="mark" aria-hidden="true">cg</span><span>cg-researcher</span></div>
   <nav class="tabs" role="tablist" aria-label="Sections">
@@ -21,14 +22,26 @@
   <div class="pill" id="modePill" title="Run mode">offline</div>
 </header>
 
-<main>
+<main id="main">
   <section id="locked" class="panel narrow" hidden>
-    <h1>Not paired</h1>
-    <p>Open the UI from a terminal with <code>cg-researcher ui</code>. It mints a single-use pairing code; nothing secret is stored in this page's URL.</p>
+    <h1 id="lockedTitle">Not paired</h1>
+    <p id="lockedWhy" class="muted"></p>
+    <p>Open the UI again with <code>cg-researcher ui</code> in a terminal, or relaunch <code>cg-researcher.app</code>. Each launch mints a single-use pairing code; nothing secret is kept in this page's URL, and sessions end when the server restarts.</p>
   </section>
 
   <section id="tab-chat" class="panel" data-panel>
-    <div id="log" class="log" aria-live="polite"></div>
+    <div class="chatbar"><span id="chatHint" class="muted"></span><button type="button" id="newChat" class="ghost">New chat</button></div>
+    <div id="log" class="log" aria-live="polite">
+      <div id="empty" class="empty">
+        <h1>Ask your local corpus</h1>
+        <p class="muted">Answers come from the local model and the files indexed in <code id="corpusDir">your corpus folder</code>. External models are only used when you allow it.</p>
+        <div class="examples">
+          <button type="button" class="ex">Summarize what the corpus says about backups</button>
+          <button type="button" class="ex">Which documents mention ransomware?</button>
+          <button type="button" class="ex">List open questions from my notes</button>
+        </div>
+      </div>
+    </div>
     <form id="chatForm" class="composer" autocomplete="off">
       <textarea id="q" rows="3" maxlength="4000" placeholder="Ask cg-researcher…  (Enter to send, Shift+Enter for a new line)" required></textarea>
       <div class="row">
@@ -36,8 +49,8 @@
         <label class="seg"><input type="radio" name="route" value="local"> Local only</label>
         <label class="seg" id="extRouteLabel"><input type="radio" name="route" value="external"> <span id="extRouteName">External</span></label>
         <label class="file">Attach<input id="files" type="file" accept=".png,.md,.markdown,.txt,.docx" multiple></label>
-        <span id="fileList" class="muted"></span>
-        <button type="submit" class="primary">Send</button>
+        <span id="fileList" class="muted files"></span>
+        <button type="submit" class="primary send">Send</button>
       </div>
     </form>
   </section>
@@ -60,7 +73,7 @@
       <datalist id="extList"></datalist>
       <label>xAI region<select id="xaiRegion"><option value="global">global (api.x.ai)</option><option value="us">US (us.api.x.ai)</option></select></label>
     </div>
-    <div class="row"><button id="switchBtn" class="primary">Switch &amp; autotune</button><button id="retuneBtn">Re-run autotune</button><span id="modelsMsg" class="muted"></span></div>
+    <div class="row"><button id="switchBtn" class="primary">Switch &amp; autotune</button><button id="retuneBtn">Re-run autotune</button><span id="modelsMsg" class="muted" role="status"></span></div>
     <h2>Tuned profile</h2>
     <div class="cards">
       <div class="card"><h3>Local</h3><dl id="localTune"></dl></div>
@@ -82,7 +95,7 @@
       <label>Temperature<input id="r_temperature" type="number" step="0.05" min="0" max="2"></label>
       <label>Max outbound chars<input id="r_max_outbound_chars" type="number" min="256" max="400000"></label>
     </div>
-    <div class="row"><button id="rulesBtn" class="primary">Save rules</button><span id="rulesMsg" class="muted"></span></div>
+    <div class="row"><button id="rulesBtn" class="primary">Save rules</button><span id="rulesMsg" class="muted" role="status"></span></div>
     <p class="note">Fixed by design: external models never receive tools; HTTP and the UI cannot approve write tools; bind address, loopback rules and connectors are not editable here.</p>
   </section>
 
@@ -101,16 +114,16 @@
         <div class="row"><button type="submit" class="primary">Save</button><button type="button" data-del>Delete</button></div>
       </form>
     </div>
-    <p id="keysMsg" class="muted"></p>
+    <p id="keysMsg" class="muted" role="status"></p>
   </section>
 
   <section id="tab-status" class="panel" data-panel hidden>
-    <div class="row"><button id="refreshBtn">Refresh</button><button id="verifyBtn">Verify audit chain</button><span id="verifyMsg" class="muted"></span></div>
+    <div class="row toolbar"><button id="refreshBtn">Refresh</button><button id="reindexBtn">Reindex corpus</button><button id="verifyBtn">Verify audit chain</button><span id="verifyMsg" class="muted" role="status"></span></div>
     <div class="cards">
       <div class="card"><h3>Health</h3><dl id="health"></dl></div>
       <div class="card"><h3>Budget</h3><dl id="budget"></dl></div>
       <div class="card wide"><h3>Tools</h3><ul id="tools" class="chips"></ul></div>
-      <div class="card wide"><h3>Graph</h3><p id="graph" class="mono"></p></div>
+      <div class="card wide"><h3>Graph <span class="muted small">(flow order)</span></h3><ol id="graph" class="flow"></ol></div>
     </div>
   </section>
 </main>
