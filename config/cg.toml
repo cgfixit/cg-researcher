@@ -38,7 +38,7 @@ max_input_chars = 4000
 
 [tools]
 auto_approve_writes = false      # even if true: never for tainted turns or remote origins
-remote_origins_read_only = true  # Telegram/SMS turns get read tools only
+remote_origins_read_only = true  # Telegram/SMS turns get remote_ok read tools only (never writes, even if false)
 max_tool_output_chars = 12000
 
 [external]

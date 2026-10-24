@@ -663,15 +663,17 @@ fn first_messages(d: &Deps, s: &mut TurnState) {
         json!({"role":"system","content":system_prompt(d, s)}),
         json!({"role":"user","content":content}),
     ];
-    // Offer only what this origin may use (topology, not prompt).
+    // Offer only what this origin may use (topology, not prompt). Remote
+    // origins never see a write tool, whatever the config says (I7);
+    // `remote_origins_read_only` further limits their reads to `remote_ok` ones.
     s.offered = d
         .tools
         .specs()
         .into_iter()
         .filter(|t| {
             !s.req.origin.is_remote()
-                || !d.cfg.tools.remote_origins_read_only
-                || (t.effect == Effect::Read && t.remote_ok)
+                || (t.effect == Effect::Read
+                    && (!d.cfg.tools.remote_origins_read_only || t.remote_ok))
         })
         .collect();
 }
@@ -776,6 +778,11 @@ async fn tool_gate(d: &Deps, mut s: TurnState) -> TurnState {
             continue;
         };
         let decided = match spec.effect {
+            // Not reachable through `offered`, but the gate does not trust the
+            // offer list: a remote origin can never confirm a write (I7).
+            Effect::Write if s.req.origin.is_remote() => {
+                deny("write tools are never available to remote origins", args)
+            }
             Effect::Read => Decided {
                 call: call.clone(),
                 allowed: true,

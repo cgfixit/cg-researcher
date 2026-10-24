@@ -361,6 +361,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn empty_allowlist_fails_loud() {
+        // I7: an enabled SMS gateway with no allowlist must refuse to build,
+        // not answer every number.
+        let mut t = toml::Table::new();
+        t.insert(
+            "sms".into(),
+            toml::Value::Table(
+                toml::from_str(
+                    "enabled = true\nfrom_number = \"+14045550100\"\nallowed_numbers = []",
+                )
+                .expect("toml"),
+            ),
+        );
+        let cfg = cg_core::config::Config::default();
+        let secrets = cg_core::secrets::SecretStore::new(std::env::temp_dir());
+        let ctx = Ctx {
+            cfg: &cfg,
+            connectors: &t,
+            secrets: &secrets,
+        };
+        let e = build(&ctx).await.err().expect("must fail");
+        assert!(e.to_string().contains("allowed_numbers is empty"));
+    }
+
+    #[tokio::test]
     async fn pin_allowlist_and_lockout() {
         let s = sms(String::new());
         assert!(

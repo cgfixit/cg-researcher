@@ -580,6 +580,33 @@ async fn remote_origins_are_never_offered_write_tools() {
 }
 
 #[tokio::test]
+async fn remote_origins_never_get_write_tools_even_when_read_only_is_off() {
+    // `tools.remote_origins_read_only = false` widens remote *reads*; it must
+    // never reach writes, even with a confirmer that says yes (I7).
+    let h = harness(
+        vec![tool_reply("gmail_send", json!({})), text_reply("ok")],
+        |c| c.tools.remote_origins_read_only = false,
+    )
+    .await;
+    let r = h
+        .agent
+        .run(req("mail", Origin::Telegram, Arc::new(Always(true))))
+        .await;
+    let seen = h.mock.seen.lock().expect("l");
+    let offered: Vec<String> = seen[0]["tools"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|t| t["function"]["name"].as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    assert_eq!(offered, vec!["web_search"]);
+    assert_eq!(r.tools[0].1, "denied");
+    assert_eq!(h.sent.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
 async fn unknown_tool_and_bad_args_are_denied() {
     let h = harness(
         vec![tool_reply("rm_rf", json!({})), text_reply("ok")],
