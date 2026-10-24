@@ -59,6 +59,66 @@ async function api(path, body) {
   return { status: r.status, data };
 }
 
+// Streaming twin of api(): POST and read server-sent events. `delta`/`reset`
+// go to onEvent as they arrive; resolves like api() with the authoritative
+// `final` payload. Resolves null when this browser or server can't stream,
+// so the caller can fall back to the plain endpoint.
+async function apiStream(path, body, onEvent) {
+  const t = token();
+  if (!t) { lock(); throw new ApiError('not paired'); }
+  if (typeof ReadableStream === 'undefined' || typeof TextDecoder === 'undefined') return null;
+  let r;
+  try {
+    r = await fetch(path, {
+      method: 'POST', cache: 'no-store', body: JSON.stringify(body),
+      headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    });
+  } catch (_) {
+    throw new ApiError('Cannot reach the cg-researcher server. Is `cg-researcher serve` (or the app) still running?');
+  }
+  if (r.status === 401) { lock('expired'); throw new ApiError('session expired'); }
+  if (r.status === 404 || r.status === 405) return null; // older server: no stream route
+  const ct = r.headers.get('content-type') || '';
+  if (!ct.startsWith('text/event-stream') || !r.body) {
+    let data = {};
+    try { data = await r.json(); } catch (_) { /* empty body */ }
+    return { status: r.status, data };
+  }
+  const reader = r.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  let final = null;
+  const flush = () => {
+    let i;
+    while ((i = buf.indexOf('\n\n')) >= 0) {
+      const block = buf.slice(0, i);
+      buf = buf.slice(i + 2);
+      let name = 'message';
+      let data = '';
+      for (const raw of block.split('\n')) {
+        const line = raw.replace(/\r$/, '');
+        if (line.startsWith('event:')) name = line.slice(6).trim();
+        else if (line.startsWith('data:')) data += (data ? '\n' : '') + line.slice(5).replace(/^ /, '');
+      }
+      if (!data) continue; // keep-alive comment
+      let obj;
+      try { obj = JSON.parse(data); } catch (_) { continue; }
+      if (name === 'final') final = { status: 200, data: obj };
+      else if (name === 'error') final = { status: 500, data: obj };
+      else onEvent(name, obj);
+    }
+  };
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (value) buf += dec.decode(value, { stream: true });
+    buf = buf.replace(/\r\n/g, '\n');
+    flush();
+    if (done || final) break;
+  }
+  if (!final) throw new ApiError('The answer stream ended early. Try again.');
+  return final;
+}
+
 const why = (r) => (r.data && r.data.error) || ('HTTP ' + r.status);
 const errText = (e) => String((e && e.message) || e);
 
@@ -198,12 +258,37 @@ async function send(payload, label) {
   setBusy(true);
   const bubble = addMsg('bot pending', 'Thinking…');
   const body = $('.body', bubble);
+  // setBusy() marks #log aria-busy, so screen readers announce the final
+  // answer once instead of every streamed chunk.
   const t0 = Date.now();
-  const tick = setInterval(() => { body.textContent = 'Thinking… ' + Math.round((Date.now() - t0) / 1000) + 's'; }, 1000);
+  let phase = 'Thinking…';
+  let streaming = false;
+  const tick = setInterval(() => {
+    if (!streaming) body.textContent = phase + ' ' + Math.round((Date.now() - t0) / 1000) + 's';
+  }, 1000);
+  const onEvent = (name, d) => {
+    if (name === 'delta' && typeof d.text === 'string') {
+      if (!streaming) {
+        streaming = true;
+        bubble.classList.remove('pending');
+        bubble.classList.add('streaming');
+        body.textContent = '';
+      }
+      body.textContent += d.text;
+      bubble.scrollIntoView({ block: 'nearest' });
+    } else if (name === 'reset') {
+      // The model asked for a tool; its provisional text is discarded.
+      streaming = false;
+      phase = 'Running tools…';
+      bubble.classList.remove('streaming');
+      bubble.classList.add('pending');
+      body.textContent = phase;
+    }
+  };
   try {
-    const r = await api('/query', payload);
+    const r = (await apiStream('/query/stream', payload, onEvent)) || (await api('/query', payload));
     clearInterval(tick);
-    bubble.classList.remove('pending');
+    bubble.classList.remove('pending', 'streaming');
     if (r.status !== 200) {
       bubble.classList.add('error');
       body.textContent = 'Error: ' + why(r);
@@ -225,7 +310,7 @@ async function send(payload, label) {
     }
     bubble.scrollIntoView({ block: 'nearest' });
   } catch (e) {
-    bubble.classList.remove('pending');
+    bubble.classList.remove('pending', 'streaming');
     bubble.classList.add('error');
     body.textContent = errText(e);
   } finally {

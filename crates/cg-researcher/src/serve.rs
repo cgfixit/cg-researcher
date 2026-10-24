@@ -128,6 +128,7 @@ pub fn router(state: Arc<AppState>, max_body: usize) -> Router {
         .route("/favicon.ico", get(|| async { StatusCode::NO_CONTENT }))
         .route("/health", get(health))
         .route("/query", post(query))
+        .route("/query/stream", post(query_stream))
         .route("/tools", get(tools))
         .route("/api/pair", post(pair))
         .route("/api/session", post(session))
@@ -681,52 +682,123 @@ async fn audit_verify(State(s): State<Arc<AppState>>, h: HeaderMap) -> Response 
     }
 }
 
-async fn query(
-    State(s): State<Arc<AppState>>,
-    h: HeaderMap,
+/// Shared request preparation for `/query` and `/query/stream`.
+async fn prepare_query(
+    s: &AppState,
+    h: &HeaderMap,
     body: Result<Json<QueryBody>, axum::extract::rejection::JsonRejection>,
-) -> Response {
-    if let Err(r) = gate(&s, &h).await {
-        return r;
-    }
-    let b = match json_body(body) {
-        Ok(b) => b,
-        Err(r) => return r,
-    };
+) -> Result<(Arc<cg_core::agent::Agent>, TurnRequest), Response> {
+    gate(s, h).await?;
+    let b = json_body(body)?;
     let agent = current(&s.slot).await;
     let lim = &agent.config().attachments;
     if b.attachments.len() > lim.max_per_turn {
-        return err(StatusCode::BAD_REQUEST, "too many attachments");
+        return Err(err(StatusCode::BAD_REQUEST, "too many attachments"));
     }
     let mut atts = Vec::new();
     for a in &b.attachments {
         let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(a.data_base64.as_bytes())
         else {
-            return err(StatusCode::BAD_REQUEST, "attachment is not base64");
+            return Err(err(StatusCode::BAD_REQUEST, "attachment is not base64"));
         };
         match cg_core::attachments::parse(&a.name, &bytes, lim) {
             Ok(x) => atts.push(x),
-            Err(e) => return err(StatusCode::UNPROCESSABLE_ENTITY, &e.to_string()),
+            Err(e) => return Err(err(StatusCode::UNPROCESSABLE_ENTITY, &e.to_string())),
         }
     }
-    let r = agent
-        .run(TurnRequest {
-            query: b.query,
-            origin: Origin::Http,
-            sender: "http".into(),
-            attachments: atts,
-            confirm_online: b.confirm_online,
-            prefer_external: b.prefer_external,
-            confirmer: Arc::new(DenyAll),
-        })
-        .await;
-    Json(json!({
+    let req = TurnRequest {
+        query: b.query,
+        origin: Origin::Http,
+        sender: "http".into(),
+        attachments: atts,
+        confirm_online: b.confirm_online,
+        prefer_external: b.prefer_external,
+        confirmer: Arc::new(DenyAll),
+    };
+    Ok((agent, req))
+}
+
+fn turn_json(agent: &cg_core::agent::Agent, r: &cg_core::agent::TurnResult) -> Value {
+    json!({
         "answer": r.answer, "answer_model": r.answer_model, "needs_confirm": r.needs_confirm,
         "external_label": agent.external_label(),
         "blocked": r.blocked, "tainted": r.tainted, "path": r.path, "sources": r.sources,
         "tools": r.tools.iter().map(|(t, d)| json!({"tool": t, "decision": d})).collect::<Vec<_>>()
-    }))
-    .into_response()
+    })
+}
+
+async fn query(
+    State(s): State<Arc<AppState>>,
+    h: HeaderMap,
+    body: Result<Json<QueryBody>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let (agent, req) = match prepare_query(&s, &h, body).await {
+        Ok(x) => x,
+        Err(r) => return r,
+    };
+    let r = agent.run(req).await;
+    Json(turn_json(&agent, &r)).into_response()
+}
+
+/// Server-sent events: `delta` {text} (guarded provisional local-model
+/// text), `reset` (discard provisional text; a tool round started), then
+/// exactly one `final` (same JSON as `/query`, authoritative) or `error`.
+/// The turn runs in its own task, so a client disconnect never skips the
+/// audit record.
+async fn query_stream(
+    State(s): State<Arc<AppState>>,
+    h: HeaderMap,
+    body: Result<Json<QueryBody>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    use axum::response::sse::{Event, KeepAlive, Sse};
+    use cg_core::stream::StreamEvent;
+
+    let (agent, req) = match prepare_query(&s, &h, body).await {
+        Ok(x) => x,
+        Err(r) => return r,
+    };
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<StreamEvent>();
+    let (done_tx, done_rx) = tokio::sync::oneshot::channel::<Value>();
+    tokio::spawn(async move {
+        let r = agent.run_streaming(req, tx).await;
+        let _ = done_tx.send(turn_json(&agent, &r));
+    });
+    struct St {
+        rx: Option<tokio::sync::mpsc::UnboundedReceiver<StreamEvent>>,
+        done: Option<tokio::sync::oneshot::Receiver<Value>>,
+    }
+    let init = St {
+        rx: Some(rx),
+        done: Some(done_rx),
+    };
+    let events = futures_util::stream::unfold(init, |mut st| async move {
+        if let Some(rx) = st.rx.as_mut() {
+            match rx.recv().await {
+                Some(StreamEvent::Delta(t)) => {
+                    let ev = Event::default()
+                        .event("delta")
+                        .data(json!({"text": t}).to_string());
+                    return Some((Ok::<_, std::convert::Infallible>(ev), st));
+                }
+                Some(StreamEvent::Reset) => {
+                    let ev = Event::default().event("reset").data("{}");
+                    return Some((Ok(ev), st));
+                }
+                None => st.rx = None, // turn finished; fall through to final
+            }
+        }
+        let done = st.done.take()?;
+        let ev = match done.await {
+            Ok(v) => Event::default().event("final").data(v.to_string()),
+            Err(_) => Event::default()
+                .event("error")
+                .data(json!({"error": "turn failed"}).to_string()),
+        };
+        Some((Ok(ev), st))
+    });
+    Sse::new(events)
+        .keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+        .into_response()
 }
 
 pub async fn serve(state: Arc<AppState>, addr: SocketAddr, max_body: usize) -> anyhow::Result<()> {
