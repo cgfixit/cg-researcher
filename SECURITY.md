@@ -16,6 +16,9 @@ externally. cg-researcher enforces this in the graph, not in the prompt:
 
 - Untrusted input (attachments, web/mail/calendar output) taints the turn, and a tainted turn
   never auto-approves a write.
+- Retrieved corpus blocks also taint the turn whenever included in the local model prompt,
+  independently of injection-pattern matches. Automatic writes apply only to CLI turns;
+  HTTP always consults its denying confirmer, even if auto-approval is configured.
 - Remote origins (Telegram/SMS) get read-only tools and cannot approve writes. SMS can never
   approve the external model.
 - Writes (`gmail_send`, `gmail_create_draft`, `gcal_create_event`) always need a human "yes"
