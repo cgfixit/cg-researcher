@@ -1,4 +1,4 @@
-// cg-agent local UI. No dependencies, no inline script, no HTML-string sinks:
+// cg-researcher local UI. No dependencies, no inline script, no HTML-string sinks:
 // every server or model string is rendered with textContent.
 'use strict';
 
@@ -6,7 +6,7 @@ const $ = (s, r = document) => r.querySelector(s);
 // f32 settings arrive widened to f64 (0.30000001...); show 2 decimals.
 const r2 = (x) => (typeof x === 'number' ? Math.round(x * 100) / 100 : x);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
-const TOKEN_KEY = 'cg-agent-session';
+const TOKEN_KEY = 'cg-researcher-session';
 let status = null;
 
 function el(tag, attrs = {}, ...kids) {
@@ -42,7 +42,7 @@ async function api(path, body) {
   return { status: r.status, data };
 }
 
-// Pairing: `cg-agent ui` opens /#p=<single-use code>. Exchange it for a
+// Pairing: `cg-researcher ui` opens /#p=<single-use code>. Exchange it for a
 // session token, then scrub it from the URL and history entry.
 async function pair() {
   const m = location.hash.match(/^#p=([0-9a-f]{64})$/);

@@ -65,7 +65,7 @@ impl GoogleAuth {
             .await
             .map_err(|e| anyhow::anyhow!("google client_secret: {e}"))?;
         let refresh = secrets.resolve(&c.refresh_token_ref).await.map_err(|e| {
-            anyhow::anyhow!("google refresh token ({e}); run `cg-agent google-auth` first")
+            anyhow::anyhow!("google refresh token ({e}); run `cg-researcher google-auth` first")
         })?;
         Ok(Self::new(
             egress("google_oauth", &["oauth2.googleapis.com"])?,
@@ -113,7 +113,7 @@ impl GoogleAuth {
         let (status, body) = send(req).await?;
         if status != 200 {
             return Err(ToolError::Failed(format!(
-                "Google token refresh HTTP {status}; re-run `cg-agent google-auth`"
+                "Google token refresh HTTP {status}; re-run `cg-researcher google-auth`"
             )));
         }
         let v = json_body(&body)?;
@@ -177,7 +177,7 @@ pub async fn authorize(
             let target = head.lines().next().and_then(|l| l.split_whitespace().nth(1)).unwrap_or("/").to_string();
             let u = url::Url::parse(&format!("http://127.0.0.1{target}"))?;
             let q: std::collections::HashMap<_, _> = u.query_pairs().into_owned().collect();
-            let page = if q.contains_key("code") { "cg-agent: authorized. You can close this tab." } else { "cg-agent: authorization failed." };
+            let page = if q.contains_key("code") { "cg-researcher: authorized. You can close this tab." } else { "cg-researcher: authorization failed." };
             let _ = s
                 .write_all(format!("HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{page}", page.len()).as_bytes())
                 .await;

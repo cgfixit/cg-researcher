@@ -1,14 +1,14 @@
-# cg-agent configuration. Copied to ~/.cg-agent/cg.toml by `cg-agent init`.
+# cg-researcher configuration. Copied to ~/.cg-researcher/cg.toml by `cg-researcher init`.
 # Secret references (never inline values):
 #   env:NAME            environment variable
 #   op://vault/item/f   1Password CLI (`op read`)
 #   keychain:svc/acct   macOS Keychain (`security find-generic-password`)
-#   file:name           ~/.cg-agent/secrets/name (0600)
+#   file:name           ~/.cg-researcher/secrets/name (0600)
 # Unknown keys are rejected; quoted booleans ("true") are rejected.
 
 [app]
 mode = "offline"          # offline | hybrid  (hybrid is gate 1 of 3 for the external model)
-home = ""                 # empty = ~/.cg-agent (or $CG_HOME)
+home = ""                 # empty = ~/.cg-researcher (or $CG_HOME)
 
 [llm]
 provider = "ollama"       # label only: ollama | lmstudio | llamacpp | mlx | vllm | openai-compatible
@@ -23,7 +23,7 @@ temperature = 0.2
 allow_non_loopback = false
 
 [rag]
-corpus_dir = ""           # empty = ~/.cg-agent/corpus  (.md .txt .docx; symlinks ignored)
+corpus_dir = ""           # empty = ~/.cg-researcher/corpus  (.md .txt .docx; symlinks ignored)
 min_score = 0.028         # RRF scale, scaled by number of ranked lists
 min_semantic_score = 0.30
 top_k = 5
@@ -45,12 +45,12 @@ max_tool_output_chars = 12000
 # Triple gate (I3): app.mode = "hybrid" AND enabled = true build the client;
 # every call still needs per-query consent (CLI prompt, UI button, or an
 # explicit "ask external" from a local origin). Switch provider/model in the
-# web UI (`cg-agent ui`); autotune runs on every switch.
+# web UI (`cg-researcher ui`); autotune runs on every switch.
 enabled = false
 provider = "anthropic"    # anthropic | xai
 model = ""                # empty = provider default (claude-sonnet-5-5 / grok-4.7)
-anthropic_key_ref = "keychain:cg-agent/anthropic_api_key"
-xai_key_ref = "keychain:cg-agent/xai_api_key"
+anthropic_key_ref = "keychain:cg-researcher/anthropic_api_key"
+xai_key_ref = "keychain:cg-researcher/xai_api_key"
 xai_region = "global"     # global (api.x.ai) | us (us.api.x.ai)
 timeout_secs = 120
 

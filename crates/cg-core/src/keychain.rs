@@ -90,7 +90,7 @@ mod tests {
     #[test]
     #[ignore = "needs an unlocked macOS keychain; run in CI macos job"]
     fn keychain_roundtrip() {
-        let svc = "cg-agent-test";
+        let svc = "cg-researcher-test";
         let acct = format!("roundtrip-{}", std::process::id());
         set(svc, &acct, "v1-secret").expect("set");
         set(svc, &acct, "v2-secret").expect("update");

@@ -90,9 +90,9 @@ jobs:
           CG_HOME: ${{ runner.temp }}/cgh
         run: |
           set -euo pipefail
-          launchctl print "gui/$(id -u)/com.cgfixit.cg-agent" | grep -E "state = (running|waiting)"
-          codesign --verify --strict --verbose=2 "$CG_HOME/bin/cg-agent"
-          codesign -d --verbose=2 "$CG_HOME/bin/cg-agent" 2>&1 | grep -q "flags=.*runtime"
+          launchctl print "gui/$(id -u)/com.cgfixit.cg-researcher" | grep -E "state = (running|waiting)"
+          codesign --verify --strict --verbose=2 "$CG_HOME/bin/cg-researcher"
+          codesign -d --verbose=2 "$CG_HOME/bin/cg-researcher" 2>&1 | grep -q "flags=.*runtime"
           [[ "$(stat -f %Lp "$CG_HOME")" == 700 ]]
           [[ "$(stat -f %Lp "$CG_HOME/cg.toml")" == 600 ]]
           for _ in $(seq 1 30); do curl -fsS http://127.0.0.1:8797/health && break; sleep 1; done
@@ -108,18 +108,31 @@ jobs:
           if lsof -nP -iTCP:8797 -sTCP:LISTEN | grep -v -E "127\.0\.0\.1|\[::1\]|^COMMAND"; then
             echo "listening on a non-loopback address" >&2; exit 1
           fi
-          "$CG_HOME/bin/cg-agent" --home "$CG_HOME" selftest
-          "$CG_HOME/bin/cg-agent" --home "$CG_HOME" audit verify
+          "$CG_HOME/bin/cg-researcher" --home "$CG_HOME" selftest
+          "$CG_HOME/bin/cg-researcher" --home "$CG_HOME" audit verify
           # scheduled job: loaded, and a manual kick writes to the shared chain
           # while `serve` is also appending (exercises the cross-process lock)
-          launchctl print "gui/$(id -u)/com.cgfixit.cg-agent.maintenance" >/dev/null
-          launchctl kickstart -k "gui/$(id -u)/com.cgfixit.cg-agent.maintenance"
+          launchctl print "gui/$(id -u)/com.cgfixit.cg-researcher.maintenance" >/dev/null
+          launchctl kickstart -k "gui/$(id -u)/com.cgfixit.cg-researcher.maintenance"
           for _ in $(seq 1 30); do
-            if "$CG_HOME/bin/cg-agent" --home "$CG_HOME" audit tail -n 50 | grep -q " maintenance "; then break; fi
+            if "$CG_HOME/bin/cg-researcher" --home "$CG_HOME" audit tail -n 50 | grep -q " maintenance "; then break; fi
             sleep 2
           done
-          "$CG_HOME/bin/cg-agent" --home "$CG_HOME" audit tail -n 50 | grep " maintenance "
-          "$CG_HOME/bin/cg-agent" --home "$CG_HOME" audit verify
+          "$CG_HOME/bin/cg-researcher" --home "$CG_HOME" audit tail -n 50 | grep " maintenance "
+          "$CG_HOME/bin/cg-researcher" --home "$CG_HOME" audit verify
+      - name: .app bundle assembles, signs and reuses the running server
+        env:
+          CG_HOME: ${{ runner.temp }}/cgh
+        run: |
+          set -euo pipefail
+          scripts/bundle-app.sh target/release/cg-researcher
+          codesign --verify --strict --deep dist/cg-researcher.app
+          # double-click path, headless: the launchd agent is already serving,
+          # so `app` must pair against it (no second server) and exit 0.
+          before="$(pgrep -fc 'cg-researcher.*serve' || true)"
+          dist/cg-researcher.app/Contents/MacOS/cg-researcher --home "$CG_HOME" ui --print | grep -q '/#p='
+          after="$(pgrep -fc 'cg-researcher.*serve' || true)"
+          [[ "$before" == "$after" ]]
       - name: uninstall --purge removes agent, binaries and data
         if: always()
         env:
@@ -127,11 +140,11 @@ jobs:
         run: |
           set -euo pipefail
           ./scripts/uninstall.sh --purge --yes
-          if launchctl print "gui/$(id -u)/com.cgfixit.cg-agent" >/dev/null 2>&1; then
+          if launchctl print "gui/$(id -u)/com.cgfixit.cg-researcher" >/dev/null 2>&1; then
             echo "launchd agent still loaded" >&2; exit 1
           fi
-          [[ ! -e "$HOME/Library/LaunchAgents/com.cgfixit.cg-agent.plist" ]]
-          [[ ! -e "$HOME/Library/LaunchAgents/com.cgfixit.cg-agent.maintenance.plist" ]]
+          [[ ! -e "$HOME/Library/LaunchAgents/com.cgfixit.cg-researcher.plist" ]]
+          [[ ! -e "$HOME/Library/LaunchAgents/com.cgfixit.cg-researcher.maintenance.plist" ]]
           [[ ! -e "$CG_HOME" ]]
       - name: serve log on failure
         if: failure()

@@ -150,7 +150,7 @@ fn core_never_depends_on_connectors() {
             "{name} must not depend on cg-connectors"
         );
         assert!(
-            !t.contains("cg-agent ") && !t.contains("cg-agent="),
+            !t.contains("cg-researcher ") && !t.contains("cg-researcher="),
             "{name} must not depend on the binary"
         );
     }
@@ -492,4 +492,21 @@ async fn http_prefer_external_without_external_stays_local() {
             .iter()
             .any(|p| p == "external_fallback")
     );
+}
+
+#[test]
+fn app_bundle_detection_is_exact() {
+    use std::path::Path;
+    assert!(crate::is_bundle_exe(Path::new(
+        "/Applications/cg-researcher.app/Contents/MacOS/cg-researcher"
+    )));
+    assert!(!crate::is_bundle_exe(Path::new(
+        "/Users/x/.cg-researcher/bin/cg-researcher"
+    )));
+    assert!(!crate::is_bundle_exe(Path::new(
+        "/tmp/app/Contents/MacOS/cg-researcher"
+    )));
+    assert!(!crate::is_bundle_exe(Path::new(
+        "/x.app/MacOS/cg-researcher"
+    )));
 }

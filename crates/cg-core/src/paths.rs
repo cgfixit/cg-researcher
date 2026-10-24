@@ -11,7 +11,7 @@ pub fn default_home() -> PathBuf {
     let base = std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .unwrap_or_else(|| ".".into());
-    PathBuf::from(base).join(".cg-agent")
+    PathBuf::from(base).join(".cg-researcher")
 }
 
 pub struct Layout {

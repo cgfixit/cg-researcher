@@ -12,7 +12,7 @@ observers. Out of scope: an attacker already running code as your user.
 ## Rule of Two
 
 A turn may combine at most two of: untrusted input, access to private data, and the ability to act
-externally. cg-agent enforces this in the graph, not in the prompt:
+externally. cg-researcher enforces this in the graph, not in the prompt:
 
 - Untrusted input (attachments, web/mail/calendar output) taints the turn, and a tainted turn
   never auto-approves a write.
@@ -40,7 +40,7 @@ externally. cg-agent enforces this in the graph, not in the prompt:
   restarts. xAI chat-completions retention was not independently verified.
 - **Web UI sessions** are in memory (lost on restart), and anyone with the API key can mint a pairing
   code. The UI is a same-user tool, not a multi-user one.
-- **SMS:** caller ID is spoofable, so the PIN is the real gate. Twilio retains messages; cg-agent
+- **SMS:** caller ID is spoofable, so the PIN is the real gate. Twilio retains messages; cg-researcher
   deletes processed inbound messages, but outbound replies stay in Twilio's log.
 - **Telegram:** Bot API traffic is not end-to-end encrypted; Telegram can read it.
 - **Public Google fallback:** fragile, ToS-grey, and off by default.

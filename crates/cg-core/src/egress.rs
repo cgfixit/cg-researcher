@@ -54,7 +54,7 @@ impl Egress {
             .no_proxy()
             .timeout(timeout)
             .connect_timeout(Duration::from_secs(15))
-            .user_agent(concat!("cg-agent/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("cg-researcher/", env!("CARGO_PKG_VERSION")))
             .build()?;
         Ok(Self {
             connector,

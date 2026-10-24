@@ -231,8 +231,8 @@ impl SecretStore {
     }
 }
 
-/// Keychain service name for every item cg-agent creates.
-pub const KEYCHAIN_SERVICE: &str = "cg-agent";
+/// Keychain service name for every item cg-researcher creates.
+pub const KEYCHAIN_SERVICE: &str = "cg-researcher";
 
 #[cfg(test)]
 mod tests {

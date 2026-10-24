@@ -68,8 +68,8 @@ pub fn check_overlay(t: &toml::Table) -> anyhow::Result<()> {
             .and_then(|v| v.as_str())
         {
             anyhow::ensure!(
-                v.starts_with("keychain:cg-agent/") || v.starts_with("file:"),
-                "external.{k} from the UI must be keychain:cg-agent/… or file:…"
+                v.starts_with("keychain:cg-researcher/") || v.starts_with("file:"),
+                "external.{k} from the UI must be keychain:cg-researcher/… or file:…"
             );
         }
     }
@@ -137,7 +137,7 @@ pub fn read(path: &Path) -> anyhow::Result<toml::Table> {
 pub fn write(path: &Path, t: &toml::Table) -> anyhow::Result<()> {
     check_overlay(t)?;
     let text = format!(
-        "# Written by the cg-agent UI. Whitelisted keys only; merged over cg.toml.\n{}",
+        "# Written by the cg-researcher UI. Whitelisted keys only; merged over cg.toml.\n{}",
         toml::to_string(t)?
     );
     let tmp = path.with_extension("toml.tmp");

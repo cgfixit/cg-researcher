@@ -54,7 +54,7 @@ const BANNED: &[&str] = &[
     r"jailbreak|dan\s+mode|developer\s+mode",
     r"decode\s+and\s+execute|base64.{0,40}execute|execute.{0,40}base64",
     r"reveal\s+(your\s+)?(instructions|system\s+prompt)",
-    // cg-agent additions: exfiltration via connectors
+    // cg-researcher additions: exfiltration via connectors
     r"(send|forward|email|text)\s+(all|every|the)\s+.{0,30}(passwords?|secrets?|tokens?|keys?)\s+to",
     r"(forward|send)\s+(this|all)\s+(emails?|messages?)\s+to\s+\S+@",
 ];

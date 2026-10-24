@@ -1,6 +1,6 @@
-# cg-agent supply-chain and security audit
+# cg-researcher supply-chain and security audit
 
-Date: 2026-10-24. Target: `cgfixit/cg-agent`, branch `cg/main`, `Cargo.lock` with 311 packages.
+Date: 2026-10-24. Target: `cgfixit/cg-researcher`, branch `cg/main`, `Cargo.lock` with 311 packages.
 
 ## Bottom line
 
