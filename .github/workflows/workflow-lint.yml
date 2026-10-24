@@ -28,6 +28,8 @@ jobs:
           ./actionlint -color
       - name: shellcheck
         run: shellcheck scripts/*.sh e2e/*.sh install.command uninstall.command init.sh
+      - name: uninstaller path safety (stubbed platform commands)
+        run: python3 scripts/test-uninstall.py
   zizmor:
     runs-on: ubuntu-latest
     timeout-minutes: 10
