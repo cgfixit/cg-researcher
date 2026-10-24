@@ -76,6 +76,107 @@ async fn body_json(r: axum::response::Response) -> serde_json::Value {
 }
 
 #[tokio::test]
+async fn local_pairing_authenticates_both_sides_and_consumes_challenges() {
+    let (s, _d) = state(60).await;
+    let app = router(s.clone(), 4096);
+    let nonce = "a".repeat(64);
+    let challenge = body_json(
+        app.clone()
+            .oneshot(post(
+                "/api/pair/challenge",
+                None,
+                &serde_json::json!({"nonce":nonce}).to_string(),
+            ))
+            .await
+            .expect("challenge"),
+    )
+    .await;
+    let c = challenge["challenge"].as_str().expect("challenge");
+    let server = crate::serve::pairing_proof(&s.api_key, "server", &nonce, c);
+    assert_eq!(challenge["proof"], server);
+    let proof = crate::serve::pairing_proof(&s.api_key, "client", &nonce, c);
+    assert_ne!(proof, server);
+    for invalid in [server, "0".repeat(64)] {
+        let r = app
+            .clone()
+            .oneshot(post(
+                "/api/pair/local",
+                None,
+                &serde_json::json!({"nonce":nonce,"challenge":c,"proof":invalid}).to_string(),
+            ))
+            .await
+            .expect("refused");
+        assert_eq!(r.status(), StatusCode::UNAUTHORIZED);
+    }
+    let body = serde_json::json!({"nonce":nonce,"challenge":c,"proof":proof}).to_string();
+    let r = app
+        .clone()
+        .oneshot(post("/api/pair/local", None, &body))
+        .await
+        .expect("pair");
+    assert_eq!(r.status(), StatusCode::OK);
+    let pair = body_json(r).await;
+    assert_eq!(pair["pair"].as_str().expect("pair").len(), 64);
+    let r = app
+        .clone()
+        .oneshot(post("/api/pair/local", None, &body))
+        .await
+        .expect("replay");
+    assert_eq!(r.status(), StatusCode::UNAUTHORIZED);
+    let r = app
+        .clone()
+        .oneshot(post(
+            "/api/session",
+            None,
+            &serde_json::json!({"pair":pair["pair"]}).to_string(),
+        ))
+        .await
+        .expect("session");
+    assert_eq!(r.status(), StatusCode::OK);
+    // Pending proofs die on restart, even if the permanent key is unchanged.
+    s.challenges.lock().await.clear();
+    let r = app
+        .oneshot(post("/api/pair/local", None, &body))
+        .await
+        .expect("restart");
+    assert_eq!(r.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn ui_refuses_an_impostor_without_sending_bearer() {
+    use axum::{Json, Router, routing::post};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let server =
+        tokio::spawn(async move {
+            axum::serve(listener, Router::new().route("/api/pair/challenge", post(
+            |h: axum::http::HeaderMap, Json(b): Json<serde_json::Value>| async move {
+                assert!(!h.contains_key("authorization"));
+                assert_eq!(b["nonce"].as_str().expect("nonce").len(), 64);
+                Json(serde_json::json!({"challenge":"b".repeat(64),"proof":"0".repeat(64)}))
+            }
+        ))).await.expect("serve");
+        });
+    let dir = tempfile::tempdir().expect("tmp");
+    crate::init(dir.path().into(), false).expect("init");
+    std::fs::write(
+        dir.path().join("cg.toml"),
+        format!("[server]\nport = {port}\n"),
+    )
+    .expect("cfg");
+    let error = crate::ui(dir.path().into(), true)
+        .await
+        .expect_err("impostor refused");
+    assert!(
+        error.to_string().contains("identity check failed"),
+        "{error}"
+    );
+    server.abort();
+}
+
+#[tokio::test]
 async fn auth_is_required_and_constant_shape() {
     let (s, _d) = state(60).await;
     let app = router(s, 1024);

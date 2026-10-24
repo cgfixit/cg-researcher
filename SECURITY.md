@@ -68,6 +68,11 @@ Assumed attacker: a malicious web page in the same browser. Mitigations:
 - Auth is a bearer token sent in a header. Cookies are never used, so CSRF has nothing to ride on.
 - The pairing code travels in the URL fragment, is single-use, expires after 120 s, and is
   scrubbed from history.
+- The CLI authenticates the loopback listener with a fresh nonce and HMAC server proof before
+  opening the UI. A separate client proof redeems a bounded, expiring, single-use in-memory
+  challenge. The permanent API key is never sent by the launcher. Client/server proof labels
+  are distinct; proofs from a previous server instance cannot mint sessions after restart.
+  Older servers without this handshake are refused; restart the server after upgrading.
 - CSP `default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self';
   frame-ancestors 'none'`, plus nosniff, no-referrer, no-store, COOP/CORP and a Permissions-Policy.
   All model or server text is rendered with `textContent`; a test fails the build on any
