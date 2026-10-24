@@ -91,3 +91,12 @@ Two gates matter most:
 - Model URL and HTTP bind must be loopback (`Config::validate`); all connector HTTP goes through `Egress` (host-pinned, HTTPS-only, no redirects, no proxy).
 
 Config: defaults in `config/cg.toml`; UI overrides layer on top via `~/.cg-researcher/ui-settings.toml`. Docs: `docs/user-guide.md`, `docs/feature.md`, `SECURITY.md`.
+
+## pstack / poteto-mode
+
+Agents using pstack follow poteto-mode conventions (concise answers, prove-it-works
+verification, subtract before adding). Per-role model choices live in
+`.cursor/rules/pstack-models.mdc` (always applied, budget `large (xhigh)`); every
+role is `inherit-parent` until real model slugs are confirmed, so roles run on the
+parent chat model. Re-run the `setup-pstack` skill to change them. This section does
+not alter INVARIANTS.md, SECURITY.md, or `.claude/settings.json` permissions.
