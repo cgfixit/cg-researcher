@@ -1,11 +1,17 @@
 name: release
 # Three ways in:
-#   * v* tag: build, then `publish` creates a public release immediately.
-#   * daily schedule (09:07 America/New_York, see `gate`): if the head of main has
-#     no tag and no successful run of this workflow yet (nobody cut a release or
-#     ran it by hand for that merge), build and publish a `nightly-YYYYMMDD-<sha>`
-#     PRERELEASE (never "Latest"). Same artifacts as a tag release, unreviewed.
-#   * manual run: build and upload artifacts only, no release.
+#   * v* tag: build, then `publish` creates a public release immediately
+#     (not a draft). Reviewed path; it may become GitHub Latest.
+#   * workflow_dispatch (no inputs, no version): build and publish an unreviewed
+#     prerelease tagged `nightly-YYYYMMDD-<sha7>` at this SHA. Not Latest.
+#     Re-running a SHA whose auto release already has the app zip, its sha256,
+#     the universal CLI tarball and its sha256 skips the rebuild and succeeds.
+#     A draft or a missing asset is rebuilt and filled in without `--clobber`
+#     (clobber deletes the old asset before the new upload finishes).
+#   * daily schedule (09:07 America/New_York, see `gate`): same prerelease when
+#     main's tip has no `v*` tag and no complete GitHub Release for that commit.
+#     A previous green run is not a publication: artifact-only successes from
+#     the old manual path leave the nightly free to cut.
 # Artifacts:
 #   * app-arm64: Apple Silicon cg-researcher.app (aarch64-apple-darwin), zipped
 #     with ditto + SHA-256; build provenance attested when the repo is public
@@ -35,7 +41,6 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      actions: read
     outputs:
       go: ${{ steps.decide.outputs.go }}
       kind: ${{ steps.decide.outputs.kind }}
@@ -58,32 +63,141 @@ jobs:
           set -euo pipefail
           public=false
           [[ "$(gh api "repos/$REPO" --jq .private)" == false ]] && public=true
-          go=false kind=none tag=""
+          go=false
+          kind=none
+          tag=""
+          auto_tag=""
+          auto_complete=false
+          vtag=""
+          complete_release=""
+
+          # Names only. The schedule can stop on a v* tag before any release API call.
+          collect_names() {
+            vtag=""
+            auto_tag=""
+            local t
+            while IFS= read -r t; do
+              [[ -z "$t" ]] && continue
+              if [[ -z "$vtag" && "$t" == v* ]]; then
+                vtag="$t"
+              fi
+              # Sorted input, so the first match is the earliest nightly tag.
+              if [[ -z "$auto_tag" && "$t" =~ ^nightly-[0-9]{8}-[0-9a-f]{7}$ ]]; then
+                auto_tag="$t"
+              fi
+            done < <(git tag --points-at "$SHA" | sort)
+          }
+
+          # Published (not a draft) and already holding the four assets the
+          # publish job uploads. Keep the names in sync with that job's `files`.
+          release_is_complete() {
+            local tag="$1"
+            local draft assets f
+            draft="$(gh release view "$tag" --repo "$REPO" --json isDraft --jq .isDraft 2>/dev/null)" || return 1
+            [[ "$draft" == "false" ]] || return 1
+            assets="$(gh release view "$tag" --repo "$REPO" --json assets --jq '.assets[].name' 2>/dev/null)" || return 1
+            for f in \
+              cg-researcher-macos-arm64.app.zip \
+              cg-researcher-macos-arm64.app.zip.sha256 \
+              cg-researcher-macos-universal.tar.gz \
+              cg-researcher-macos-universal.tar.gz.sha256
+            do
+              printf '%s\n' "$assets" | grep -Fxq -- "$f" || return 1
+            done
+            return 0
+          }
+
+          # Prefer the earliest complete nightly tag. If none is complete, keep
+          # the earliest nightly tag so a partial release is repaired in place.
+          resolve_releases() {
+            local t fallback="$auto_tag"
+            auto_tag=""
+            auto_complete=false
+            complete_release=""
+            while IFS= read -r t; do
+              [[ -z "$t" ]] && continue
+              if release_is_complete "$t"; then
+                if [[ -z "$complete_release" ]]; then
+                  complete_release="$t"
+                fi
+                if [[ "$auto_complete" == false && "$t" =~ ^nightly-[0-9]{8}-[0-9a-f]{7}$ ]]; then
+                  auto_tag="$t"
+                  auto_complete=true
+                fi
+              fi
+            done < <(git tag --points-at "$SHA" | sort)
+            if [[ "$auto_complete" == false ]]; then
+              auto_tag="$fallback"
+            fi
+          }
+
+          mint_auto_tag() {
+            local resolved
+            if [[ -n "$auto_tag" ]]; then
+              return 0
+            fi
+            auto_tag="nightly-$(date -u +%Y%m%d)-${SHA:0:7}"
+            resolved="$(git rev-parse -q --verify "refs/tags/${auto_tag}^{commit}" 2>/dev/null || true)"
+            if [[ -n "$resolved" && "$resolved" != "$SHA" ]]; then
+              printf 'tag %s already points at %s, not %s; refusing to retarget\n' \
+                "$auto_tag" "${resolved:0:7}" "${SHA:0:7}" >&2
+              exit 1
+            fi
+          }
+
           case "$EVENT" in
             push)
-              go=true kind=tag tag="$REF_NAME" ;;
+              go=true
+              kind=tag
+              tag="$REF_NAME"
+              ;;
             workflow_dispatch)
-              go=true kind=build ;;
+              git cat-file -e "${SHA}^{commit}"
+              collect_names
+              resolve_releases
+              if [[ "$auto_complete" == true ]]; then
+                echo "auto release $auto_tag already has the app and universal CLI assets; skipping rebuild"
+                tag="$auto_tag"
+              else
+                mint_auto_tag
+                go=true
+                kind=dispatch
+                tag="$auto_tag"
+                echo "manual dispatch publishes prerelease $tag (not Latest)"
+              fi
+              ;;
             schedule)
               hour="$(TZ=America/New_York date +%H)"
               if [[ "$hour" != "09" ]]; then
                 echo "schedule: $hour:xx in America/New_York, not the 09:xx run; skipping"
               else
-                tags="$(git tag --points-at "$SHA")"
-                runs="$(gh run list --repo "$REPO" --workflow release.yml --commit "$SHA" \
-                  --status success --json databaseId --jq length)"
-                if [[ -n "$tags" ]]; then
-                  echo "main@${SHA:0:7} already tagged ($tags); nothing to cut"
-                elif [[ "$runs" != 0 ]]; then
-                  echo "release.yml already succeeded $runs time(s) on main@${SHA:0:7}; nothing to cut"
+                git cat-file -e "${SHA}^{commit}"
+                collect_names
+                if [[ -n "$vtag" ]]; then
+                  echo "main@${SHA:0:7} already tagged $vtag; nothing to cut"
                 else
-                  go=true kind=nightly tag="nightly-$(date -u +%Y%m%d)-${SHA:0:7}"
+                  # A green release.yml run is not a publication. Artifact-only
+                  # manual successes used to block this branch (issue #43).
+                  resolve_releases
+                  if [[ -n "$complete_release" ]]; then
+                    echo "main@${SHA:0:7} already published ($complete_release); nothing to cut"
+                  else
+                    mint_auto_tag
+                    go=true
+                    kind=nightly
+                    tag="$auto_tag"
+                    echo "schedule publishes prerelease $tag (not Latest)"
+                  fi
                 fi
-              fi ;;
+              fi
+              ;;
           esac
           echo "event=$EVENT go=$go kind=$kind tag=$tag public=$public"
           {
-            echo "go=$go"; echo "kind=$kind"; echo "tag=$tag"; echo "public=$public"
+            echo "go=$go"
+            echo "kind=$kind"
+            echo "tag=$tag"
+            echo "public=$public"
           } >> "$GITHUB_OUTPUT"
 
   app-arm64:
@@ -188,7 +302,7 @@ jobs:
 
   publish:
     needs: [gate, app-arm64, universal]
-    if: needs.gate.outputs.kind == 'tag' || needs.gate.outputs.kind == 'nightly'
+    if: success() && (needs.gate.outputs.kind == 'tag' || needs.gate.outputs.kind == 'nightly' || needs.gate.outputs.kind == 'dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -202,7 +316,7 @@ jobs:
         run: |
           set -euo pipefail
           for f in *.sha256; do sha256sum -c "$f"; done
-      - name: publish release (tag) or nightly prerelease (schedule)
+      - name: publish release (tag) or unreviewed prerelease (dispatch, schedule)
         env:
           GH_TOKEN: ${{ github.token }}
           KIND: ${{ needs.gate.outputs.kind }}
@@ -211,19 +325,68 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          files=(cg-researcher-macos-arm64.app.zip cg-researcher-macos-arm64.app.zip.sha256
-                 cg-researcher-macos-universal.tar.gz cg-researcher-macos-universal.tar.gz.sha256)
+          [[ -n "$TAG" && -n "$SHA" && -n "$REPO" && -n "$KIND" ]] || {
+            echo "publish: missing TAG, SHA, REPO, or KIND" >&2
+            exit 1
+          }
+          # Keep these names in sync with release_is_complete in the gate job.
+          files=(
+            cg-researcher-macos-arm64.app.zip
+            cg-researcher-macos-arm64.app.zip.sha256
+            cg-researcher-macos-universal.tar.gz
+            cg-researcher-macos-universal.tar.gz.sha256
+          )
+          # Idempotent for nightly/dispatch. Do not pass --clobber: gh deletes the
+          # existing asset before the replacement upload finishes.
+          publish_prerelease() {
+            local title="$1"
+            local notes="$2"
+            local draft assets f
+            local -a missing
+            if ! draft="$(gh release view "$TAG" --repo "$REPO" --json isDraft --jq .isDraft 2>/dev/null)"; then
+              echo "creating prerelease $TAG at $SHA (not Latest)"
+              gh release create "$TAG" --repo "$REPO" --target "$SHA" --prerelease --latest=false \
+                --title "$title" --notes "$notes" "${files[@]}"
+              return 0
+            fi
+            echo "release $TAG already exists; uploading only missing assets (no --clobber)"
+            assets="$(gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name')"
+            missing=()
+            for f in "${files[@]}"; do
+              if ! printf '%s\n' "$assets" | grep -Fxq -- "$f"; then
+                missing+=("$f")
+              fi
+            done
+            if [[ ${#missing[@]} -gt 0 ]]; then
+              gh release upload "$TAG" --repo "$REPO" "${missing[@]}"
+            else
+              echo "release $TAG already has all assets; leaving them in place"
+            fi
+            if [[ "$draft" == "true" ]]; then
+              echo "publishing draft $TAG as a prerelease (not Latest)"
+              gh release edit "$TAG" --repo "$REPO" --draft=false --prerelease --latest=false \
+                --title "$title" --notes "$notes"
+            fi
+          }
           case "$KIND" in
             tag)
               # Published immediately. A v* push is the release; do not pass --draft.
               gh release create "$TAG" --repo "$REPO" --verify-tag --title "$TAG" \
                 --notes "Apple Silicon app (ad-hoc signed, not notarized) + universal CLI. Verify SHA-256 before use." \
-                "${files[@]}" ;;
+                "${files[@]}"
+              ;;
             nightly)
-              # Creates the lightweight tag at $SHA. Prerelease, never "Latest": nobody reviewed it.
-              gh release create "$TAG" --repo "$REPO" --target "$SHA" --prerelease --latest=false \
-                --title "$TAG (unreviewed nightly from main)" \
-                --notes "Automatic daily build of main @ $SHA: nobody cut a release or ran release.yml for this merge. Apple Silicon app (ad-hoc signed, not notarized) + universal CLI. Verify SHA-256 before use." \
-                "${files[@]}" ;;
-            *) echo "publish ran with kind=$KIND"; exit 1 ;;
+              publish_prerelease \
+                "$TAG (unreviewed nightly from main)" \
+                "Automatic daily build of main @ $SHA. Unreviewed prerelease, not GitHub Latest. Apple Silicon app (ad-hoc signed, not notarized) + universal CLI. Verify SHA-256 before use."
+              ;;
+            dispatch)
+              publish_prerelease \
+                "$TAG (unreviewed manual build)" \
+                "Manual workflow_dispatch of $SHA. Unreviewed prerelease, not GitHub Latest. Apple Silicon app (ad-hoc signed, not notarized) + universal CLI. Verify SHA-256 before use."
+              ;;
+            *)
+              echo "publish ran with kind=$KIND" >&2
+              exit 1
+              ;;
           esac

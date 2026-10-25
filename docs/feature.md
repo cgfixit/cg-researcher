@@ -19,7 +19,7 @@ an operator's Mac, `R` = against the real third-party service. Nothing is `M` or
 | UI | Streaming local answers (SSE `/query/stream`, guarded per chunk, `/query` fallback) | done; external + CLI not streamed | L (Chromium + WebKit, mock model) |
 | Audit | Protobuf HMAC-chained log, signed head, cross-process lock | done | L |
 | CI | UI e2e (Playwright Chromium + WebKit, incl. streaming frames), cargo-fuzz (attachments, sanitizer, stream), llvm-cov floor 70% | done; runs in Actions | L |
-| CI | Daily `nightly-YYYYMMDD-<sha>` prerelease (`.app` + universal CLI) when `main` moved without a tag or a release run; 09:07 Eastern | done; `release.yml` `gate` job, no run yet | — |
+| CI | `nightly-YYYYMMDD-<sha7>` prerelease (`.app` + universal CLI) on manual `workflow_dispatch`, and at 09:07 Eastern when `main` has no `v*` tag and no complete release for that commit | done; `release.yml` gate. Publish-on-dispatch not re-run on Actions in the change that added it | — |
 | Connectors | Web search: SerpAPI, opt-in public Google | done | L (mock) |
 | Connectors | netconnect (ARP, RFC1918 allowlist) + Net-Viewer sockets | partial (macOS paths) | L |
 | Connectors | Telegram gateway (numeric allowlist, private chats) | done | L (mock) |

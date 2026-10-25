@@ -253,9 +253,11 @@ the identified integration build. That run used keyword-only retrieval; semantic
 vision inference, live authenticated third-party integrations, real Keychain mutation,
 launchd installation and downloaded-app Gatekeeper acceptance were outside its coverage.
 
-Tagged v* runs publish a public GitHub Release immediately; scheduled runs can publish unreviewed nightly prereleases
-at 09:07 America/New_York when eligible main has no tag and no successful release-workflow run.
-Manual runs build/upload artifacts without publishing. See release workflow.
+Tagged v* runs publish a public GitHub Release immediately. Manual `workflow_dispatch` (no inputs) and the
+09:07 America/New_York schedule publish unreviewed `nightly-YYYYMMDD-<sha7>` prereleases and do not mark
+them Latest. The schedule cuts one when main's tip has no `v*` tag and no complete release for that
+commit; a previous green artifact-only run does not count. Re-running dispatch on a SHA that already
+has a complete auto release skips the rebuild. See `.github/workflows/release.yml`.
 Uninstall keeps your data; --purge requires typing delete before deleting the app home and Keychain items.
 
 <details>
