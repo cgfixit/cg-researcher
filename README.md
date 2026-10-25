@@ -253,7 +253,7 @@ the identified integration build. That run used keyword-only retrieval; semantic
 vision inference, live authenticated third-party integrations, real Keychain mutation,
 launchd installation and downloaded-app Gatekeeper acceptance were outside its coverage.
 
-Tagged release runs create drafts; scheduled runs can publish unreviewed nightly prereleases
+Tagged v* runs publish a public GitHub Release immediately; scheduled runs can publish unreviewed nightly prereleases
 at 09:07 America/New_York when eligible main has no tag and no successful release-workflow run.
 Manual runs build/upload artifacts without publishing. See release workflow.
 Uninstall keeps your data; --purge requires typing delete before deleting the app home and Keychain items.

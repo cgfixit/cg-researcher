@@ -1,6 +1,6 @@
 name: release
 # Three ways in:
-#   * v* tag: build, then `publish` creates a DRAFT release for human review.
+#   * v* tag: build, then `publish` creates a public release immediately.
 #   * daily schedule (09:07 America/New_York, see `gate`): if the head of main has
 #     no tag and no successful run of this workflow yet (nobody cut a release or
 #     ran it by hand for that merge), build and publish a `nightly-YYYYMMDD-<sha>`
@@ -202,7 +202,7 @@ jobs:
         run: |
           set -euo pipefail
           for f in *.sha256; do sha256sum -c "$f"; done
-      - name: draft release (tag) or nightly prerelease (schedule)
+      - name: publish release (tag) or nightly prerelease (schedule)
         env:
           GH_TOKEN: ${{ github.token }}
           KIND: ${{ needs.gate.outputs.kind }}
@@ -215,7 +215,8 @@ jobs:
                  cg-researcher-macos-universal.tar.gz cg-researcher-macos-universal.tar.gz.sha256)
           case "$KIND" in
             tag)
-              gh release create "$TAG" --repo "$REPO" --draft --verify-tag --title "$TAG" \
+              # Published immediately. A v* push is the release; do not pass --draft.
+              gh release create "$TAG" --repo "$REPO" --verify-tag --title "$TAG" \
                 --notes "Apple Silicon app (ad-hoc signed, not notarized) + universal CLI. Verify SHA-256 before use." \
                 "${files[@]}" ;;
             nightly)
