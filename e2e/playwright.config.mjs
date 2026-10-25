@@ -16,7 +16,11 @@ export default defineConfig({
   testMatch: /.*\.spec\.mjs/,
   fullyParallel: false,
   workers: 1, // one server, one rate limiter
-  retries: 0,
+  retries: 0, // a flaky spec must fail visibly, not pass on the second try
+  // The browser launch is a worker fixture, so it is charged to the FIRST test of each
+  // project. WebKit's cold start on a fresh CI runner has eaten the default 30 s budget
+  // (main @ dfdd773: page.goto timed out in the first WebKit spec, the other 17 passed).
+  timeout: 60_000,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: { baseURL: 'http://127.0.0.1:8797', trace: 'retain-on-failure' },
   projects: [
