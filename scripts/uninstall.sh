@@ -25,7 +25,7 @@ if [[ -d "$CG_HOME" ]]; then
   esac
 fi
 LABEL="com.cgfixit.cg-researcher"
-for l in com.cgfixit.cg-agent com.cgfixit.cg-agent.maintenance "$LABEL" "$LABEL.maintenance"; do
+for l in com.cgfixit.cg-agent com.cgfixit.cg-agent.maintenance "$LABEL" "$LABEL.maintenance" "$LABEL.corpus-scan" "$LABEL.corpus-mail"; do
   launchctl bootout "gui/$(id -u)/$l" 2>/dev/null || true
   rm -f "$HOME/Library/LaunchAgents/$l.plist"
 done

@@ -80,6 +80,16 @@ refuse to start; SMS also needs the PIN from `secrets/sms_pin`.
 - Logs: stderr (launchd: `~/.cg-researcher/logs/*.log`, 0600). The audit log is protobuf + HMAC chain; it stores
   fingerprints, not your queries.
 
+## Corpus scan
+
+`scripts/daily-corpus-scan.sh` is the scan. Copy it to `~/bin/daily-corpus-scan.sh` if you want that path, then print the jobs again so the plist points at the copy. It lists `.md`, `.markdown`, `.txt`, and `.docx` files `find` considers less than one day old (`-mtime -1`) under `~/.cg-researcher/corpus`. It records SHA-256 of the file bytes and does not extract text. Extraction stays on `cg-researcher index`. Each run writes `logs/corpus-scan-*.md` and appends one line to `logs/dream.log`, including runs that finish in under 10 seconds. It does not stay running.
+
+`--print-scan-plist` and `--print-mail-plist` print launchd jobs for 04:00 and 16:00 local, and for 09:00 and 18:30 local. `--print-cron` prints the same times. Those times follow the Mac clock. Set the time zone to America/New_York when you want Eastern wall time. launchd runs a calendar job missed during sleep once on wake, and coalesces several missed fires into that one run. cron does not. Load one of the two schedulers, not both. Neither job waits for a network.
+
+`--mail` sends the latest report only when `CG_CORPUS_SCAN_TO` is one plain address and `msmtp` or `/usr/bin/mail` is present. The printed mail plist does not contain that address. Add it under `EnvironmentVariables` before you load the job. This script never reads an SMTP password. A wake-up run still uses `find -mtime -1`. It does not reopen files older than that window.
+
+`./scripts/uninstall.sh` also bootouts `com.cgfixit.cg-researcher.corpus-scan` and `com.cgfixit.cg-researcher.corpus-mail`. It leaves the reports in place.
+
 ## Uninstall
 
 `./scripts/uninstall.sh` (or `uninstall.command`) removes the binaries and launchd jobs and keeps your data.

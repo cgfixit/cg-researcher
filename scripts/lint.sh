@@ -134,6 +134,8 @@ if [[ "$(uname -s)" == Darwin ]]; then
   plutil -lint packaging/macos/Info.plist || bad "Info.plist"
   ./scripts/install.sh --print-plist | plutil -lint -s - || bad "launchd plist"
   ./scripts/install.sh --print-maintenance-plist | plutil -lint -s - || bad "maintenance plist"
+  ./scripts/daily-corpus-scan.sh --print-scan-plist | plutil -lint -s - || bad "corpus scan plist"
+  ./scripts/daily-corpus-scan.sh --print-mail-plist | plutil -lint -s - || bad "corpus mail plist"
 else
   echo; echo "note: not macOS, plutil checks skipped (CI runs them on macos-15)"
 fi
