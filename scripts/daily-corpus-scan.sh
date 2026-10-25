@@ -113,11 +113,18 @@ acquire_lock() {
     return 0
   fi
   # A crash leaves the directory. A live pid means another scan holds it.
-  # Do not remove that directory on the way out.
+  # An empty pid is the moment after mkdir and before the pid write. Do not steal it.
+  if [[ ! -s "$LOCKDIR/pid" ]]; then
+    sleep 1
+  fi
   if [[ -f "$LOCKDIR/pid" ]]; then
     old=$(cat "$LOCKDIR/pid" 2>/dev/null || true)
   fi
-  if [[ -n "$old" ]] && kill -0 "$old" 2>/dev/null; then
+  if [[ -z "$old" ]]; then
+    LOCKDIR=""
+    die "scan lock has no pid. If no scan is running, remove $STATE_DIR/corpus-scan.lock" 75
+  fi
+  if kill -0 "$old" 2>/dev/null; then
     LOCKDIR=""
     die "another corpus scan is running (pid $old)" 75
   fi
@@ -295,7 +302,7 @@ EOF
 }
 
 plist_footer() {
-  local home_xml="$1" log_name="$2"
+  local home_xml="$1" log_name="$2" extra_env="${3:-}"
   cat <<EOF
   <key>RunAtLoad</key><false/>
   <key>ProcessType</key><string>Background</string>
@@ -304,7 +311,10 @@ plist_footer() {
   <key>LimitLoadToSessionType</key><string>Aqua</string>
   <key>Umask</key><integer>63</integer>
   <key>EnvironmentVariables</key>
-  <dict><key>PATH</key><string>/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin</string></dict>
+  <dict>
+    <key>PATH</key><string>/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin</string>
+$extra_env
+  </dict>
   <key>StandardOutPath</key><string>$home_xml/logs/$log_name</string>
   <key>StandardErrorPath</key><string>$home_xml/logs/$log_name</string>
 </dict>
@@ -334,13 +344,17 @@ EOF
 }
 
 print_mail_plist() {
-  local bin_xml home_xml
+  local bin_xml home_xml extra="" to_xml
   bin_xml=$(xml_escape "$SCRIPT_PATH")
   home_xml=$(xml_escape "$CG_HOME")
+  if valid_recipient "$CG_CORPUS_SCAN_TO"; then
+    to_xml=$(xml_escape "$CG_CORPUS_SCAN_TO")
+    extra="    <key>CG_CORPUS_SCAN_TO</key><string>$to_xml</string>"
+  fi
   plist_header "$LABEL_MAIL"
   cat <<EOF
-  <!-- Add CG_CORPUS_SCAN_TO under EnvironmentVariables before bootstrap.
-       One plain address. This plist ships without one. Mail exits 2 until you add it. -->
+  <!-- When CG_CORPUS_SCAN_TO is set at print time, it is copied below.
+       Otherwise add that key before bootstrap. Mail exits 2 until it is set. -->
   <key>ProgramArguments</key>
   <array>
     <string>$bin_xml</string>
@@ -354,23 +368,25 @@ print_mail_plist() {
     <dict><key>Hour</key><integer>$MAIL_HOUR_PM</integer><key>Minute</key><integer>$MAIL_MINUTE_PM</integer></dict>
   </array>
 EOF
-  plist_footer "$home_xml" "corpus-mail.launchd.log"
+  plist_footer "$home_xml" "corpus-mail.launchd.log" "$extra"
 }
 
 print_cron() {
+  local mail_prefix=""
+  if valid_recipient "$CG_CORPUS_SCAN_TO"; then
+    mail_prefix="CG_CORPUS_SCAN_TO='$CG_CORPUS_SCAN_TO' "
+  fi
   cat <<EOF
 # cg-researcher corpus scan. Times are this Mac's local clock.
 # Install this file OR the launchd plists, not both.
 # cron does not run a job missed during sleep. launchd StartCalendarInterval does,
 # and coalesces several missed fires into one run on wake.
 # That run still uses find -mtime -1. It does not look further back.
-# Export CG_CORPUS_SCAN_TO for the two --mail lines. Do not put a password here.
+# Do not put an SMTP password in this file.
 0 $SCAN_HOUR_AM * * * '$SCRIPT_PATH' --home '$CG_HOME'
 0 $SCAN_HOUR_PM * * * '$SCRIPT_PATH' --home '$CG_HOME'
-0 $MAIL_HOUR_AM * * * '$SCRIPT_PATH' --home '$CG_HOME' --mail
-$MAIL_MINUTE_PM $MAIL_HOUR_PM * * * '$SCRIPT_PATH' --home '$CG_HOME' --mail
-# Mail sends only when CG_CORPUS_SCAN_TO is set in the environment cron actually has.
-# Do not put an SMTP password in this file.
+0 $MAIL_HOUR_AM * * * ${mail_prefix}'$SCRIPT_PATH' --home '$CG_HOME' --mail
+$MAIL_MINUTE_PM $MAIL_HOUR_PM * * * ${mail_prefix}'$SCRIPT_PATH' --home '$CG_HOME' --mail
 EOF
 }
 
@@ -398,7 +414,9 @@ collect_into() {
   LIST_FILE="$WORKDIR/list"
   # collect_files starts at depth 0 and still reads a directory at depth 8.
   # That directory's files are nine find levels below the corpus root.
-  find "$root" -maxdepth 9 -type f -mtime -1 -print0 > "$LIST_FILE"
+  # -H follows a symlinked start directory, matching collect_files on the corpus root.
+  # Inner symlinks stay unfollowed. A find error is recorded and the scan still finishes.
+  find -H "$root" -maxdepth 9 -type f -mtime -1 -print0 > "$LIST_FILE" || printf 'find-failed\t%s\n' "$root" >> "$out.skip"
   while IFS= read -r -d '' f || [[ -n "${f:-}" ]]; do
     [[ -n "$f" ]] || continue
     case "$f" in
@@ -618,8 +636,9 @@ run_scan() {
 run_mail() {
   local report
   prepare_paths
-  mkdir -p "$STATE_DIR" "$LOG_DIR"
-  acquire_lock
+  # Mail only reads a finished report. It does not take the scan lock, so a
+  # coalesced wake can send while a scan is still hashing.
+  [[ -d "$LOG_DIR" ]] || die "no corpus-scan report under $LOG_DIR" 1
   report=$(latest_report || true)
   [[ -n "$report" ]] || die "no corpus-scan report under $LOG_DIR" 1
   send_report "$CG_CORPUS_SCAN_TO" "$report"
