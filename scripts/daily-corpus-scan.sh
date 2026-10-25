@@ -100,7 +100,7 @@ require_absolute() {
     *) die "$what must be an absolute path: $path" ;;
   esac
   case "$path" in
-    *$'\n'*|*'#'*|*'&'*|*'\'*|*"'"*) die "$what contains a character this script will not schedule: $path" ;;
+    *$'\n'*|*'#'*|*'&'*|*'\'*|*"'"*|*'%'*) die "$what contains a character this script will not schedule: $path" ;;
   esac
 }
 
@@ -112,19 +112,14 @@ acquire_lock() {
     LOCK_OWNED=1
     return 0
   fi
-  # A crash leaves the directory. A live pid means another scan holds it.
-  # An empty pid is the moment after mkdir and before the pid write. Do not steal it.
+  # Wait out the mkdir-then-pid write. After that, an empty pid is a crash.
   if [[ ! -s "$LOCKDIR/pid" ]]; then
     sleep 1
   fi
-  if [[ -f "$LOCKDIR/pid" ]]; then
+  if [[ -s "$LOCKDIR/pid" ]]; then
     old=$(cat "$LOCKDIR/pid" 2>/dev/null || true)
   fi
-  if [[ -z "$old" ]]; then
-    LOCKDIR=""
-    die "scan lock has no pid. If no scan is running, remove $STATE_DIR/corpus-scan.lock" 75
-  fi
-  if kill -0 "$old" 2>/dev/null; then
+  if [[ -n "$old" ]] && scan_still_running "$old"; then
     LOCKDIR=""
     die "another corpus scan is running (pid $old)" 75
   fi
@@ -144,6 +139,21 @@ acquire_lock() {
   rm -rf -- "$stale"
 }
 
+scan_still_running() {
+  local pid="$1" cmd=""
+  kill -0 "$pid" 2>/dev/null || return 1
+  cmd=$(ps -p "$pid" -o args= 2>/dev/null || true)
+  if [[ -z "$cmd" ]]; then
+    cmd=$(ps -p "$pid" -o command= 2>/dev/null || true)
+  fi
+  # ps failed: do not steal a pid we cannot name.
+  [[ -n "$cmd" ]] || return 0
+  case "$cmd" in
+    *daily-corpus-scan.sh*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 ext_of() {
   local base ext
   base=$(basename -- "$1")
@@ -161,16 +171,19 @@ allowed_ext() {
   esac
 }
 
-# Text notes with a NUL in the first 8192 bytes are skipped. .docx is a zip
-# and is hashed whole; attachments::parse in the product decides if it opens.
+# The indexer rejects a NUL anywhere in a text file. .docx is a zip and is hashed whole.
 is_nul_text() {
-  local dump
-  # BSD od on macOS has no "--". Paths here are absolute, so they are not flags.
-  dump=$(od -An -t u1 -N 8192 -v "$1") || return 2
-  if printf '%s\n' "$dump" | grep -Eq '(^|[[:space:]])0([[:space:]]|$)'; then
+  local rc=0
+  # Command substitution drops NUL bytes, so grep on a substituted NUL never sees one.
+  # od prints a decimal 0 for every NUL in the whole file. The indexer rejects any NUL.
+  od -An -t u1 -v "$1" | grep -Eq '(^|[[:space:]])0([[:space:]]|$)' || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
     return 0
   fi
-  return 1
+  if [[ "$rc" -eq 1 ]]; then
+    return 1
+  fi
+  return 2
 }
 
 file_hash() {
@@ -242,7 +255,7 @@ find_cg() {
 valid_recipient() {
   local to="$1"
   case "$to" in
-    ''|-*|*' '*|*$'\t'*|*$'\n'*|*'@'*'@'*) return 1 ;;
+    ''|-*|*' '*|*$'\t'*|*$'\n'*|*'@'*'@'*|*'%'*) return 1 ;;
   esac
   case "$to" in
     *[!A-Za-z0-9._%+-@]*) return 1 ;;
@@ -456,8 +469,7 @@ collect_into() {
 
 append_dream() {
   local previous="$1" sources="$2" changed="$3" elapsed="$4"
-  # Record every finished run. A run under 10 seconds still has to leave a
-  # last-known time, or a later catch-up cannot tell when the script last ran.
+  # previous= is for a person reading this log. It does not widen find -mtime -1.
   # No CPU threshold: this product does not define "spare resources".
   printf 'when=%s\tran=yes\tprevious=%s\telapsed_s=%s\tsources=%s\tchanged=%s\n' \
     "$(date '+%Y-%m-%dT%H:%M:%S%z')" \
@@ -472,7 +484,7 @@ run_scan() {
   local previous bin scanned skipfile hash bytes old status
   local sources=0 changed=0 unchanged=0
   local stamp report dest n=0 ask_note
-  local f
+  local f parent
   prepare_paths
   ensure_work
   [[ -d "$CORPUS" ]] || die "corpus directory does not exist: $CORPUS"
@@ -497,8 +509,9 @@ run_scan() {
       printf 'missing\t%s\n' "${HOME:-}/Downloads" >> "$skipfile"
     fi
   fi
-  STATE_TMP="$WORKDIR/state"
-  REPORT_TMP="$WORKDIR/report"
+  # Same directory as the destination so mv is a rename, not a cross-device copy.
+  STATE_TMP="$STATE_DIR/.corpus-scan-tsv.$$"
+  REPORT_TMP="$LOG_DIR/.corpus-scan-report.$$"
   : > "$STATE_TMP"
   {
     printf '# Corpus scan\n\n'
@@ -580,18 +593,41 @@ run_scan() {
   } >> "$REPORT_TMP"
   {
     printf '\n## Index\n\n'
-    printf '    cg-researcher --home %s index\n' "$CG_HOME"
+    printf "    cg-researcher --home '%s' index\n" "$CG_HOME"
     if [[ -n "$bin" ]]; then
-      printf '    %s --home %s index\n' "$bin" "$CG_HOME"
+      printf "    '%s' --home '%s' index\n" "$bin" "$CG_HOME"
     fi
     printf '\n## Ask the local model\n\n'
-    printf '    cg-researcher --home %s chat\n' "$CG_HOME"
+    printf "    cg-researcher --home '%s' chat\n" "$CG_HOME"
     if [[ -n "$bin" ]]; then
-      printf '    %s --home %s chat\n' "$bin" "$CG_HOME"
+      printf "    '%s' --home '%s' chat\n" "$bin" "$CG_HOME"
     fi
     printf '\nQuestion to paste: Review the indexed notes. List connections, patterns, insights, incomplete conclusions, and specific open research questions. Cite source paths.\n'
     printf '\n## Email\n\nnot sent. This scan does not send mail. The mail job passes --mail.\n'
   } >> "$REPORT_TMP"
+  # Keep hash rows for files outside this window so the next change is visible.
+  if [[ -f "$STATE_FILE" ]]; then
+    while IFS="$(printf '\t')" read -r hash bytes f || [[ -n "${hash:-}" ]]; do
+      case "$hash" in
+        ''|'#'*) continue ;;
+      esac
+      # Drop a file only when its parent directory is still there. A missing
+      # parent may be an unmounted volume, and the hash baseline should survive that.
+      parent=$(dirname -- "$f")
+      if [[ -d "$parent" && ! -e "$f" ]]; then
+        printf -- '- removed: %s\n' "$f" >> "$REPORT_TMP.removed"
+        continue
+      fi
+      if path_was_scanned "$STATE_TMP" "$f"; then
+        continue
+      fi
+      printf '%s\t%s\t%s\n' "$hash" "$bytes" "$f" >> "$STATE_TMP.keep"
+    done < "$STATE_FILE"
+  fi
+  if [[ -s "$REPORT_TMP.removed" ]]; then
+    printf '\n## Removed\n\n' >> "$REPORT_TMP"
+    cat "$REPORT_TMP.removed" >> "$REPORT_TMP"
+  fi
   stamp=$(date '+%Y%m%dT%H%M%S')
   # Always suffix -NN so a later file in the same second sorts after the earlier one.
   while true; do
@@ -601,22 +637,9 @@ run_scan() {
     [[ "$n" -lt 100 ]] || die "too many reports in the same second"
   done
   chmod 600 "$REPORT_TMP"
+  rm -f "$REPORT_TMP.removed"
   mv -f "$REPORT_TMP" "$dest"
   REPORT_TMP=""
-  # Keep hash rows for files outside this window so the next change is visible.
-  if [[ -f "$STATE_FILE" ]]; then
-    while IFS="$(printf '\t')" read -r hash bytes f || [[ -n "${hash:-}" ]]; do
-      case "$hash" in
-        ''|'#'*) continue ;;
-      esac
-      # A renamed or deleted file must not stay in the table forever.
-      [[ -e "$f" ]] || continue
-      if path_was_scanned "$STATE_TMP" "$f"; then
-        continue
-      fi
-      printf '%s\t%s\t%s\n' "$hash" "$bytes" "$f" >> "$STATE_TMP.keep"
-    done < "$STATE_FILE"
-  fi
   {
     printf '# cg-researcher corpus-scan hashes v1\n'
     if [[ -f "$STATE_TMP.keep" ]]; then
