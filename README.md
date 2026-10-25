@@ -1,298 +1,326 @@
-# CG LOCAL RESEARCHER
+CG LOCAL RESEARCHER
 
-A local-first research assistant: RAG over your own notes, a loopback model
-(Ollama / LM Studio / llama.cpp / vLLM), and an optional, triple-gated external
-model. Every turn starts at `retrieve` and ends at `audit_logger`. The graph is
-the policy (`cg-graph` is a small LangGraph-style `StateGraph`; there is no
-maintained Rust LangGraph).
+Ask your files. Follow the sources. Choose what leaves your Mac.
 
-Docs: [user guide](docs/user-guide.md) · [features](docs/feature.md) · [security](SECURITY.md) ·
-[invariants](INVARIANTS.md). Formerly `cg-agent`; see the user
-guide for the one-time migration.
+CI
+UI tests
+Rust
+macOS
+MIT
 
-## Quickstart
+A local-first research assistant in Rust: RAG over your own notes and documents, a loopback
+model, and optional connectors for web search, mail, calendar and more. Use the terminal or an
+embedded web UI; add Anthropic Claude or xAI Grok only when you explicitly enable and consent to it.
 
-```bash
-./init.sh                       # dev: pinned toolchain, fmt, clippy -D warnings, tests, init
-./scripts/install.sh            # or install: release build → ~/.cg-researcher/bin/cg-researcher
-#   --with-netviewer  (macOS) also builds CyClaw-Net-Viewer at a pinned commit
-#   --service         per-user launchd agent (com.cgfixit.cg-researcher)
-#   --maintenance     daily 03:15 launchd health check (com.cgfixit.cg-researcher.maintenance)
-ollama pull qwen3.8:27b-mlx-cg && ollama pull gemma4-26b-a4b:ud-q4_k_xl-cg && ollama pull all-minilm
-cp ~/notes/*.md ~/.cg-researcher/corpus/ && cg-researcher index
-cg-researcher chat                   # /attach ./diagram.png   /attach ./spec.docx
+The graph is the policy. Every turn enters at retrieve and finishes at audit_logger;
+tool permissions, external-model consent and write approval are enforced in code.
+The shipped configuration is offline, loopback-only, external models off, connectors off.
+No telemetry SDKs, hosted vector database or frontend CDN.
+
+Quickstart · Feature map · Policy graph ·
+User guide · Security · Invariants
+
+Local Ollama answer with source references and Protected context
+
+Real Ollama output over synthetic notes. See the verification gallery
+for the exact build, exercised paths and limits.
+
+What you can do
+
+• Research your own material. Find decisions in engineering notes, summarize runbooks, or ask
+questions about a project corpus with file references you can inspect.
+• Review a document in context. Attach Markdown, text or Word documents; use a local vision
+model for PNG diagrams and screenshots.
+• Extend a local answer deliberately. Enable web search or ask an external model for a
+specific turn, with separate controls over whether local context and attachments can leave.
+• Connect useful daily tools. Search mail, check a calendar, inspect local network metadata,
+or propose a draft/event through connectors you enable. Approve write tools from the CLI.
+
+Built for one operator on one Mac. The practical value is a searchable personal corpus,
+local inference and inspectable decisions, with optional services behind explicit controls.
+
+Feature map
+
+|Area               |What is implemented                                                                                         |Details                                      |
+|-------------------|------------------------------------------------------------------------------------------------------------|---------------------------------------------|
+|Local models       |OpenAI-compatible chat and embeddings; Ollama, LM Studio, llama.cpp, MLX and vLLM configurations            |[Models](#local-models)                      |
+|Retrieval          |SQLite FTS5 BM25 + exact cosine search, RRF fusion, source references and live index reload                 |[Retrieval](#retrieval)                      |
+|Attachments        |`.md`, `.txt`, `.docx` and `.png`; bounded parsing, PNG metadata stripping, optional local vision           |[User guide](docs/user-guide.md#everyday-use)|
+|Web UI             |Local answer streaming, source chips, attachments, model switching/autotune, rules, keys, status and reindex|[Web UI](#web-ui)                            |
+|Policy             |Ten-node graph, bounded tool loop, origin-aware permissions, protected context and per-turn external consent|[Graph and gates](#policy-graph)             |
+|External models    |Anthropic Claude / xAI Grok; three gates, payload rules, budgets and no tools                               |[External models](#external-models)          |
+|Connectors         |Web search, Gmail, Google Calendar, Telegram, Twilio SMS, 1Password metadata and network snapshots          |[Connector map](#connectors)                 |
+|Audit and operation|HMAC-chained protobuf log, signed head, concurrent-writer locking, selftest, launchd and maintenance        |[Operation](#operation-and-verification)     |
+
+See the detailed feature inventory for component status, and the
+verification evidence for what has actually run.
+
+Quickstart
+
+Target: Apple Silicon (arm64), macOS 14 or newer. Install
+Xcode Command Line Tools (xcode-select --install)
+and native arm64 rustup. The installer rejects Rosetta shells;
+rustc -vV should report host: aarch64-apple-darwin. Use rustup so the repository’s
+pinned toolchain is honored.
+
+git clone https://github.com/cgfixit/cg-researcher.git
+cd cg-researcher
+./scripts/install.sh
+export PATH="$HOME/.cg-researcher/bin:$PATH"
+
+Start your local model server, then edit ~/.cg-researcher/cg.toml: set llm.base_url,
+llm.model and llm.embed_model to models your server exposes. Set llm.vision_model
+to an installed VLM, or "" to disable image forwarding. Model weights are separate:
+the installer does not download them, and the shipped text/vision IDs must exist on your server.
+
+For Ollama with the default embedding model:
+
+ollama pull all-minilm
+cp ~/notes/*.md ~/.cg-researcher/corpus/
+cg-researcher index
 cg-researcher selftest
-cg-researcher ui                     # local web UI (needs serve / --service running)
-```
+cg-researcher chat
 
-cg-researcher targets **Apple Silicon (arm64) Macs on macOS 14 (Sonoma) or newer**, including macOS 27
-"Golden Gate", which is Apple silicon only. CI runs the Mac jobs on macOS 15 and `macos-latest` (macOS 26 today, Golden Gate once GitHub moves the label); Golden Gate uses the same
-arm64 binary. Intel builds (`--target x86_64-apple-darwin`) are best-effort and
-only possible on macOS 26 or older, because Golden Gate does not run on Intel Macs.
-Linux builds and passes the test suite, but it is best-effort: no Keychain, no launchd, and the installer refuses to run.
+In CLI chat: /attach ./spec.docx, /attach ./diagram.png, /ext <question>, /clear, /quit.
+Open the browser interface with cg-researcher app, which starts or reuses serve and pairs the UI.
+Alternatively, run cg-researcher serve in one terminal and cg-researcher ui in another.
 
-Prerequisites for `install.sh`: Xcode Command Line Tools (`xcode-select --install`) and a native arm64
-[rustup](https://rustup.rs) (not Homebrew `rust`; `rust-toolchain.toml` pins 1.99.1 and only rustup honors it).
-The installer refuses to run from a Rosetta shell, so it never builds an x86_64 binary by accident
-(`rustc -vV` should report `host: aarch64-apple-darwin`).
+|Install option                                                        |Purpose                                                                                          |
+|----------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|
+|`./scripts/install.sh --service --maintenance`                        |Per-user launchd server + daily 03:15 local health check                                         |
+|`./scripts/install.sh --with-netviewer`                               |Also build CyClaw-Net-Viewer at the installer-pinned commit                                      |
+|`install.command` / `uninstall.command`                               |Finder entry points for the source install/uninstall scripts                                     |
+|[Release artifacts](https://github.com/cgfixit/cg-researcher/releases)|Apple Silicon `.app` and universal CLI; see [binary installation](packaging/macos/CLI-INSTALL.md)|
 
-macOS Finder users can double-click `install.command` / `uninstall.command`. Tagged releases also
-publish a draft **Apple Silicon `cg-researcher.app`** (ad-hoc signed, not notarized) plus a universal
-CLI tarball; build the app locally with `scripts/bundle-app.sh`. Once a day (`release.yml`, 09:07
-Eastern) the same artifacts are cut as a `nightly-YYYYMMDD-<sha>` **prerelease** when the head of
-`main` carries no tag and nobody has run the release workflow for it; nightlies are unreviewed and
-never marked "Latest". A manual run of `release.yml` builds and uploads artifacts without publishing.
-`scripts/uninstall.sh` keeps your data; `--purge` deletes `~/.cg-researcher` after you type `delete`.
+App bundles are ad-hoc signed, not notarized; source installation is the supported path.
+Intel and Linux are best-effort; Linux has no Keychain or launchd and the installer refuses it.
+Windows is unsupported. Formerly cg-agent: see the migration notes.
 
-## Local models
+Local models
 
-Any OpenAI-compatible server on loopback: Ollama (`:11434/v1`), LM Studio (`:1234/v1`),
-llama.cpp `llama-server` / `mlx_lm.server` (`:8080/v1`), vLLM. Non-loopback model URLs are
-refused unless `llm.allow_non_loopback = true`. Defaults: `llm.model = "qwen3.8:27b-mlx-cg"` (text generation) and `llm.vision_model = "gemma4-26b-a4b:ud-q4_k_xl-cg"`
-(multimodal, for PNG attachments). Set `llm.vision_model` to any VLM (for example
-`qwen2.5vl:7b`) to let PNG attachments reach a model. Set it to `""` and PNGs are validated and
-stripped, then not sent.
+The client uses OpenAI-compatible endpoints on loopback:
 
-## Commands
+|Server                                    |Typical `llm.base_url`                |
+|------------------------------------------|--------------------------------------|
+|Ollama                                    |`http://127.0.0.1:11434/v1`           |
+|LM Studio                                 |`http://127.0.0.1:1234/v1`            |
+|llama.cpp `llama-server` / `mlx_lm.server`|`http://127.0.0.1:8080/v1`            |
+|vLLM / another compatible server          |Its configured loopback `/v1` endpoint|
 
-| command | what it does |
-|---|---|
-| `chat` | CLI turn loop; the only origin that can approve writes interactively |
-| `serve` | `127.0.0.1:8797` API (`/health`, `/query`, `/query/stream`, `/tools`, `/api/*`) + web UI + enabled gateways |
-| `init [--force-config]` | owner-only `~/.cg-researcher`, default config (`--force-config` rewrites it from the shipped default), audit key, API key, SMS PIN |
-| `ui [--print]` | mint a single-use pairing code and open `http://127.0.0.1:8797/#p=…` |
-| `maintain` | selftest + audit-chain verify, recorded in the audit log; non-zero exit on failure |
-| `gateways` | Telegram / SMS only |
-| `index` | rebuild the RAG index from the corpus (.md .txt .docx); a running `serve` picks it up live |
-| `app` | what `cg-researcher.app` runs: init if needed, start or reuse `serve`, open the UI |
-| `audit verify` / `audit tail -n 20` | check the protobuf audit chain + signed head / show recent records |
-| `google-auth` | loopback PKCE consent for Gmail / Calendar (least-privilege scopes) |
-| `netviewer [--cli]` | open CyClaw-Net-Viewer.app or print its numeric socket snapshot |
+Shipped defaults: qwen3.8:27b-mlx-cg for text,
+gemma4-26b-a4b:ud-q4_k_xl-cg for vision, and all-minilm for embeddings.
+Choose models that fit your machine and backend. PNGs are validated and re-encoded;
+they reach a model only when llm.vision_model is configured.
 
-```bash
-curl -s 127.0.0.1:8797/query -H "authorization: Bearer $(cat ~/.cg-researcher/secrets/api.key)" \
-  -H 'content-type: application/json' -d '{"query":"what is in my notes about X?"}'
-```
+Autotune uses model metadata, with built-in fallbacks, to derive output-token, temperature,
+RAG top_k and context-character budgets when models switch. An advertised context ceiling
+can differ from the backend’s loaded allocation; check the server configuration too.
+Non-loopback model URLs require an explicit llm.allow_non_loopback = true override in cg.toml.
 
-## Graph and gates
+Policy graph
 
-```
-retrieve → guardrail_input ─┬─ route_by_score ─┬─ local_llm ⇄ tool_gate → tool_exec
-                            │                  └─ user_gate ─┬─ local_llm
-                            │                                ├─ external_fallback (Claude / Grok, 3 gates, no tools)
-                            │                                └─ (pause: ask the human)
-                            └──────────────── guardrail_output → audit_logger → END
-```
+cg-graph is a small LangGraph-style StateGraph; policy lives in
+cg-core::agent. Ten nodes, four routers, one entry and one audit sink:
 
-Ten nodes, four routers, one entry (`retrieve`), one sink (`audit_logger`). Two of the
-nodes are gates, and they answer different questions.
+flowchart TD
+    retrieve["retrieve"] --> guardrail_input["guardrail_input"]
+    guardrail_input -->|accepted| route_by_score["route_by_score"]
+    guardrail_input -->|blocked| audit_logger["audit_logger"]
+    route_by_score -->|confident match| local_llm["local_llm"]
+    route_by_score -->|weak match or external request| user_gate{"user_gate"}
+    user_gate -->|local or declined| local_llm
+    user_gate -->|enabled and consented| external_fallback["external_fallback"]
+    user_gate -->|pause for consent| audit_logger
+    local_llm -->|tool calls| tool_gate{"tool_gate"}
+    tool_gate --> tool_exec["tool_exec"]
+    tool_exec --> local_llm
+    local_llm -->|answer| guardrail_output["guardrail_output"]
+    external_fallback --> guardrail_output
+    guardrail_output --> audit_logger
+    audit_logger --> finish(["END"])
 
-### `user_gate` — may this turn leave the machine?
+user_gate: may this turn use an external model? The client is constructed only when
+app.mode = "hybrid" and external.enabled = true; each query still needs consent.
+Without consent, an eligible turn returns needs_confirm = true and is audited. The client
+re-sends with confirm_online; no graph checkpoint or waiting thread is retained.
 
-Reached only when `route_by_score` finds no confident local match (or the operator sent
-`/ext` / `prefer_external`). It is gate 3 of 3 for the external model; gates 1 and 2
-(`app.mode = "hybrid"` and `external.enabled`) decide whether an external client is even
-constructed, and `Agent::new` is the only construction site.
+tool_gate: may this specific tool call run? Arguments must be a JSON object and the
+tool must have been offered to this origin. Allowed reads run; write handling depends on the channel:
 
-| external client | origin may consent | `confirm_online` | result |
-|---|---|---|---|
-| none (gates 1+2 closed) | — | — | `local_llm` |
-| built | **no** (SMS always; Telegram unless `allow_telegram`) | — | `local_llm` |
-| built | yes | `true` (or `prefer_external`) | `external_fallback` |
-| built | yes | `false` | `local_llm` |
-| built | yes | unset | **pause** → `audit_logger` |
+|Origin        |Write-tool behavior                                                                                       |
+|--------------|----------------------------------------------------------------------------------------------------------|
+|CLI `chat`    |Human confirmation by default. Explicit auto-approval applies only to CLI turns without untrusted context.|
+|HTTP / web UI |Writes are denied, including when `tools.auto_approve_writes = true`.                                     |
+|Telegram / SMS|Write tools are never offered and cannot be approved. Read tools are restricted to `remote_ok` by default.|
 
-The pause is not a blocked thread. The graph ends with `needs_confirm = true` and the
-client re-sends the same query with `confirm_online` set; nothing is checkpointed and no
-model is called in between. External models never receive tools, and their output marks
-the turn **tainted**.
+Corpus text included in a prompt, attachments, untrusted tool output and external answers mark a
+turn tainted internally; the UI calls this Protected context. Such turns cannot auto-approve
+writes. Denied/declined calls return DENIED: <reason> to the model, and decisions enter the
+audit chain with argument fingerprints. The local tool loop is bounded by max_tool_iterations.
 
-### `tool_gate` — may each requested tool call run?
+See I1–I8 and their enforcing tests and the threat model.
 
-Reached whenever `local_llm` returns tool calls. It is inside the bounded
-`local_llm ⇄ tool_gate → tool_exec` cycle (`max_tool_iterations`). For every call:
+External models
 
-1. Arguments must parse as a JSON object, else `denied`.
-2. The tool must be in the list **offered for this origin** (remote origins get read-only,
-   `remote_ok` tools), else `denied`. Offering is done by topology, not by prompt.
-3. `Effect::Read` → `allowed`.
-4. `Effect::Write` → `allowed` only if `tools.auto_approve_writes` **and** the turn is not
-   tainted **and** the origin is local. Otherwise the `Confirmer` is asked with a
-   human-readable summary (suffixed `[turn contains untrusted content]` when tainted) and
-   the call becomes `confirmed` or `declined`. Remote channels cannot confirm.
+Off by default. Anthropic Claude and xAI Grok require all three gates:
 
-Denied and declined calls are not dropped: `tool_exec` returns `DENIED: <reason>` to the
-model as the tool result, so the model can explain instead of hallucinating success. Tool
-output from `untrusted_output` connectors is sanitized, wrapped in `<untrusted>`, and
-taints the turn, which removes auto-approval from any later write in the same turn.
-Every decision is written to the audit chain with the args stored as HMAC fingerprints.
+1. app.mode = "hybrid".
+2. external.enabled = true.
+3. Consent for the query: CLI confirmation, /ext, the UI’s External mode, or an explicit API request.
 
-## External models (Anthropic Claude, xAI Grok)
+SMS can never consent; Telegram requires its opt-in external-consent policy and confirmation flow.
+External models never receive tools. Model IDs must match the selected provider.
 
-Off by default. Three gates, all required (I3): `app.mode = "hybrid"`, `external.enabled = true`,
-and consent on **each** query (CLI `y`, the UI's "External" button, `/ext <question>` in chat, or
-`"prefer_external": true` on `/query`). SMS can never consent; Telegram can only if
-`external.rules.allow_telegram` is on.
+• Payload controls: local RAG context, attachment text and images stay local under the shipped
+external rules. Outbound text is redacted and capped at 24,000 characters.
+• Budgets: 20 calls/hour, 100/day and 2,048 output tokens by default. Call budgets are in memory
+and reset on process restart. UI rule relaxations require acknowledgement and a policy_relaxed audit record.
+• Keys: the UI stores provider keys in macOS Keychain; config holds secret references and no API
+endpoint returns a stored key.
+• Transport: pinned provider hosts, TLS 1.3 only and Mozilla roots by default. external.tls_roots = "system"
+is a config-file opt-in; see TLS behavior and limits.
 
-- Keys live in the macOS Keychain (`keychain:cg-researcher/anthropic_api_key`, `…/xai_api_key`); paste them
-  in the UI's Keys tab. Prefixes are checked (`sk-ant-`, `xai-`) and no endpoint ever returns a key.
-- Transport: TLS 1.3 only, and Mozilla's root program instead of the macOS trust store, so a locally
-  installed root CA (MDM, corporate TLS inspection) cannot read the key or prompts. On such a network
-  the call fails with a message naming `external.tls_roots`; set it to `"system"` in cg.toml only if
-  that interception is expected. See SECURITY.md "Transport (TLS)".
-- Hosts are pinned: `api.anthropic.com`, `api.x.ai` or `us.api.x.ai`. Anthropic uses `/v1/messages`;
-  xAI uses `/v1/chat/completions` (not the Responses API, which stores prompts for 30 days by default).
-- External models **never** get tools. Their output marks the turn tainted, so later writes need human approval.
-- `[external.rules]` all ship closed: local RAG context, attachment text and images stay on the
-  machine; calls are budgeted (20/hour, 100/day); output is capped at 2048 tokens. The outbound query
-  and context are redacted and capped at 24,000 chars. Loosening a rule in the UI shows a confirmation
-  and writes `policy_relaxed` to the audit log.
-- **Autotune** runs on every model switch. Local: Ollama `/api/show` or LM Studio `/api/v0/models`
-  gives the context length and vision/tool capability. External: the provider's model-metadata
-  endpoint, falling back to a built-in table. It derives max_tokens, temperature ceiling, RAG top_k and
-  a context-character budget, and records `model_tuned` in the audit log.
+External-model consent and connector enablement are separate controls. Enabled connectors make
+their own service requests; remote services’ privacy and retention policies apply.
 
-## Web UI
+Web UI
 
-`cg-researcher ui` first proves it is talking to its own server (fresh nonce, HMAC server proof keyed by
-the local API key; an impostor on the port is refused) and then redeems a client proof for a one-time
-pairing code (120 s TTL, single use). The API key itself is never sent. It then opens the browser on a URL whose `#fragment` carries the code: browsers never send
-fragments to servers, and the page wipes it from history. The page swaps the code for a 12-hour
-session token kept in `sessionStorage`. Tabs: Chat (local / auto / external), Models (switch +
-autotune), Rules, Keys, Status (graph, budgets, audit verify). The UI is compiled into the binary and
-has no CDN or remote assets. It runs under a strict CSP (`default-src 'none'`, no inline script). The
-server answers only `Host: 127.0.0.1|localhost|[::1]` (DNS-rebinding guard) and refuses
-cross-origin requests. Settings changes are limited to a whitelist (model, rules, provider, keys).
-Chat answers from the local model stream in as they are generated (`POST /query/stream`,
-server-sent events). Each streamed piece has already been through the output guard (secret
-redaction, link defanging, `<think>` stripping), and text is held back at a word boundary so a
-secret split across tokens never reaches the page half-written. The `final` event carries the
-authoritative answer, which replaces the streamed text. External-model answers and the CLI are not
-streamed.
-The UI cannot change bind address, loopback rules, connectors or write approval. Overrides go to
-`~/.cg-researcher/ui-settings.toml` (0600), layered over `cg.toml`.
+Chat · Models · Rules · Keys · Status, compiled into the binary with no CDN or remote assets.
+Chat includes attachments, source chips, Copy, New chat, progress feedback and guarded local-answer
+streaming. Status shows the graph, budgets and audit verification, and can reindex the corpus.
 
-## Scheduled jobs
+The launcher authenticates its server using a nonce/HMAC exchange before obtaining a single-use
+pairing code (120-second TTL). The code travels in the URL fragment, is scrubbed from history,
+and becomes a 12-hour session token in sessionStorage; restart invalidates sessions.
+The permanent API key is never sent by the launcher.
 
-| what | schedule | where |
-|---|---|---|
-| `cg-researcher maintain` (selftest + audit verify) | daily 03:15 local | launchd `com.cgfixit.cg-researcher.maintenance` via `install.sh --maintenance` |
-| CI on macOS (build, test, Keychain, install smoke) | Mon 07:41 UTC | `.github/workflows/ci.yml` |
-| gitleaks full-history rescan | Mon 05:23 UTC | `.github/workflows/gitleaks.yml` |
-| actionlint + zizmor + shellcheck + `scripts/test-uninstall.py` | Mon 05:29 UTC | `.github/workflows/workflow-lint.yml` |
-| cargo-audit + cargo-deny | Mon 06:17 UTC | `.github/workflows/audit.yml` |
-| fuzz attachments + sanitizer + stream (15 min each) | Tue 04:47 UTC | `.github/workflows/fuzz.yml` |
-| nightly `.app` + CLI prerelease, only if `main` moved without a tag or a release run | daily 09:07 America/New_York (cron 13:07 and 14:07 UTC, the `gate` job keeps the 09:xx one) | `.github/workflows/release.yml` |
+The HTTP surface checks loopback Host headers and Origin, serves a strict CSP, and restricts settings
+to a whitelist. UI changes cannot enable connectors, change bind/loopback policy or grant write approval.
+Overrides live in owner-only ~/.cg-researcher/ui-settings.toml, layered over cg.toml.
 
-On every PR and every push to `main`: `scripts/lint.sh` on an Apple Silicon runner (`lint.yml`: hygiene,
-fmt, clippy, cargo deny when installed, shellcheck, actionlint, plutil). On every PR: browser end-to-end tests of the web UI in Chromium and WebKit (`ui-e2e.yml`, against a
-real `serve` and a Rust mock model), line coverage with a 70% floor (`coverage.yml`), and a 2-minute
-fuzz run when attachment, sanitizer, secret, streaming or model-client code changes. Locally:
-`cargo build -p cg-researcher --bins --examples && (cd e2e && npm ci --ignore-scripts && npx playwright install --only-shell chromium webkit && npx playwright test)`
-and `cargo +nightly fuzz run attachments`.
+Local SSE deltas pass the output guard before leaving the process; a tool round can reset provisional
+text, and the final event is authoritative. CLI and external-model answers do not stream.
+See everyday use and API behavior and UI security.
 
-launchd is preferred on macOS because it runs a missed job after wake. If you prefer cron anyway:
+Retrieval
 
-```cron
-15 3 * * * $HOME/.cg-researcher/bin/cg-researcher --home $HOME/.cg-researcher maintain >> $HOME/.cg-researcher/logs/maintenance.log 2>&1
-```
+One owner-only SQLite file: ~/.cg-researcher/index/rag.sqlite3.
+FTS5 BM25 ranks keywords; an in-memory Rust scan ranks unit-normalized embeddings by
+exact cosine; RRF (k = 60) combines the lists. No vector service, ANN index or SQLite extension.
+Exact search cost grows with corpus size and embedding dimension; large-corpus latency needs measurement.
 
-Appending is safe while `serve` is running: writers take an advisory lock on `audit.pb.lock` and resync from
-the verified tail, so the chain never forks.
+The corpus accepts .md, .txt and .docx; symlinks are ignored and document extraction is bounded.
+Questions are tokenized and quoted before FTS5 matching. Re-run cg-researcher index after corpus
+or embedding-model changes; a running server picks up the rebuilt index. Missing/unusable embeddings
+leave keyword retrieval available; dimension mismatches warn and use keyword-only search.
 
-## Retrieval
+Connectors
 
-One owner-only SQLite file (`~/.cg-researcher/index/rag.sqlite3`): **FTS5 BM25** for keywords and
-**exact cosine** over unit-normalized embeddings, fused with RRF (k = 60) as in CyClaw. Vectors are
-scanned in RAM by a vectorizable Rust loop: fine to ~1M chunks, no ANN index, no vector server, no
-SQLite extension, no `unsafe`. Hostile FTS5 syntax in a question is quoted away. Changing
-`embed_model` needs `cg-researcher index` (a dimension mismatch falls back to keyword-only, with a warning).
+Every connector ships with enabled = false. Enable only what you need in
+cg.toml, supply secret references, then run cg-researcher selftest.
 
-## Connectors (all `enabled = false` by default)
+|Connector    |Tools / role                      |Controls and limits                                                                                                                                                            |
+|-------------|----------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|`web_search` |`web_search`                      |SerpAPI; public Google only with no resolved key and explicit opt-in. No switch to public Google after API rejection/quota failure; CAPTCHA/rate limits cause refusal/cooldown.|
+|`netconnect` |`net_neighbors`, `net_connections`|Allowlisted private/loopback IPv4 ranges; OS ARP cache and optional CyClaw-Net-Viewer socket snapshot on macOS.                                                                |
+|`telegram`   |Inbound gateway                   |Private DMs, numeric user-ID allowlist, optional confirmation codes.                                                                                                           |
+|`sms`        |Twilio polling gateway            |E.164 allowlist + PIN, lockout, processed inbound messages deleted; no public webhook.                                                                                         |
+|`gmail`      |Search, read, create draft, send  |Reads are untrusted; writes use the CLI gate. Single recipient, header-injection checks, complete bounded confirmation body with secret redaction.                             |
+|`gcal`       |List / create events              |Reads are untrusted; creation uses the CLI gate. No attendees field.                                                                                                           |
+|`onepassword`|`onepassword_search`              |`op item list` metadata only: title, vault, category, URLs; no secret-value retrieval tool.                                                                                    |
 
-| connector | tools / role | effect | notes |
-|---|---|---|---|
-| `web_search` | `web_search` | read, untrusted | SerpAPI. Public google.com only if **no key** and `allow_public_google = true`; never a fallback after a key rejection or quota hit |
-| `netconnect` | `net_neighbors`, `net_connections` | read | ARP cache via fixed `/usr/sbin` paths; RFC1918 CIDR allowlist; `net_connections` uses bundled CyClaw-Net-Viewer (macOS) |
-| `telegram` | inbound gateway | — | long-poll, private DMs, numeric user-id allowlist, optional 6-digit confirm codes |
-| `sms` | inbound gateway | — | Twilio polling (no webhook), E.164 allowlist **+ PIN**, lockout, deletes processed inbound messages |
-| `gmail` | `gmail_search`, `gmail_read`, `gmail_create_draft`, `gmail_send` | read untrusted / write | single recipient, header-injection-proof MIME |
-| `gcal` | `gcal_list_events`, `gcal_create_event` | read untrusted / write | no attendees field (cannot invite third parties) |
-| `onepassword` | `onepassword_search` | read | `op item list` metadata only, and never `op item get` |
+Gmail/Calendar use cg-researcher google-auth for loopback PKCE authorization.
+Telegram/SMS require non-empty allowlists. See connector setup
+and service-specific security limits.
+Adding a connector means one module with async fn build(&Ctx) -> Parts and one registry entry in
+cg-connectors; core never depends on connectors.
 
-Adding a connector means one module with `async fn build(&Ctx) -> Parts` plus one line in `REGISTRY`
-(`crates/cg-connectors/src/lib.rs`).
+Operation and verification
 
-## Layout
+cg-researcher maintain runs selftest, including audit-chain verification, records the outcome and
+exits non-zero on failure. install.sh --maintenance schedules it daily at 03:15 local via launchd.
+Audit records use protobuf + HMAC-SHA256 chaining, a signed head and a cross-process append lock.
+Queries, senders and tool arguments are keyed fingerprints. See audit limits.
 
-```
-crates/cg-graph       StateGraph / conditional edges / bounded invoke
-crates/cg-audit       protobuf (prost + protox, no protoc) HMAC-SHA256 chained log
-crates/cg-core        config, policy graph, RAG, model clients, egress, sanitizer, secrets
-crates/cg-connectors  everything that talks to a third party
-crates/cg-researcher  the binary (clap, axum, embedded UI from crates/cg-researcher/ui)
-config/cg.toml        shipped defaults, copied by `init`; every gate closed
-packaging/macos       Info.plist for the .app bundle
-scripts/              lint.sh (the lint gate), install.sh, uninstall.sh, test-uninstall.py, bundle-app.sh
-e2e/                  Playwright specs (Chromium + WebKit) against serve + the mock model
-fuzz/                 cargo-fuzz targets (attachments, sanitizer, stream); own Cargo.lock, nightly only
-.claude/              Claude Code settings and repo skills (see Development)
-```
+CI defines macOS build/test/Keychain/install checks, lint and documentation-command checks,
+Chromium + WebKit UI tests against a real server with a mock model, a 70% line-coverage floor,
+dependency/secret/workflow scans and bounded fuzzing. Triggers and schedules live in
+the workflows; current results are in Actions.
 
-## Dependencies and toolchain
+Documented native acceptance covers real Ollama, CLI,
+Safari corpus/attachment answers, pairing, policy controls, audit and local arm64 app packaging on
+the identified integration build. That run used keyword-only retrieval; semantic retrieval,
+vision inference, live authenticated third-party integrations, real Keychain mutation,
+launchd installation and downloaded-app Gatekeeper acceptance were outside its coverage.
 
-| file | pins |
-|---|---|
-| `rust-toolchain.toml` | Rust **1.99.1** with `rustfmt` + `clippy` (rustup only; Homebrew `rust` ignores it) |
-| `Cargo.toml` | edition 2024, `rust-version = "1.90"` (MSRV, checked by CI), `resolver = "3"`; every external crate version lives once in `[workspace.dependencies]` and the crates inherit it with `name.workspace = true` plus their own `features` |
-| `Cargo.lock` | committed; everything runs `--locked` (CI, `init.sh`, `install.sh`) |
-| `deny.toml` | license allowlist, crates.io only, `wildcards = "deny"`, and the I2 bans (the OpenTelemetry, Sentry, PostHog/Segment/Datadog/Honeycomb families, phone-home update checkers, `openssl-sys`, `native-tls`; exact names, cargo-deny has no globs); `cargo deny check advisories bans licenses sources` is the CI command |
-| `fuzz/Cargo.toml` + `fuzz/Cargo.lock` | separate package (not a workspace member), pinned nightly in `fuzz.yml`; its resolved versions match the workspace lock |
-| `e2e/package.json` + `package-lock.json` | `@playwright/test` 1.64.1 only; `npm ci --ignore-scripts` |
-| `.github/workflows/*.yml` | all actions pinned by SHA; the same `dtolnay/rust-toolchain` SHA and `1.99.1` everywhere, `1.90` for the MSRV job |
+Tagged release runs create drafts; scheduled runs can publish unreviewed nightly prereleases
+at 09:07 America/New_York when eligible main has no tag and no successful release-workflow run.
+Manual runs build/upload artifacts without publishing. See release workflow.
+Uninstall keeps your data; --purge requires typing delete before deleting the app home and Keychain items.
 
-HTTP is `reqwest` on rustls (no OpenSSL, no `native-tls`, enforced by `deny.toml`); SQLite is `rusqlite` with the bundled engine and FTS5; the audit log is `prost` with `protox`, so no `protoc` is needed; macOS Keychain goes through `security-framework` (macOS-only target dependency). Changing a version means editing the root `Cargo.toml` once, then `cargo metadata --locked` must still pass or the lock needs a deliberate `cargo update -p <crate>`.
+<details>
+<summary><strong>Command reference</strong></summary>
 
-## Development
+|Command                            |Purpose                                                                             |
+|-----------------------------------|------------------------------------------------------------------------------------|
+|`init [--force-config]`            |Create owner-only home, config and secrets; `--force-config` restores shipped config|
+|`chat`                             |CLI turn loop and interactive write approval                                        |
+|`serve [--no-gateways]`            |Loopback API + UI at `127.0.0.1:8797`; enabled gateways unless suppressed           |
+|`app`                              |Initialize if needed, start/reuse server, open paired UI                            |
+|`ui [--print]`                     |Pair with a running server; optionally print the URL                                |
+|`index`                            |Rebuild the corpus index                                                            |
+|`selftest` / `maintain`            |Check configuration/runtime; record scheduled maintenance outcome                   |
+|`audit verify` / `audit tail -n 20`|Verify the chain / inspect recent records                                           |
+|`gateways`                         |Run Telegram/SMS gateways only                                                      |
+|`google-auth`                      |Authorize enabled Gmail/Calendar connectors                                         |
+|`netviewer [--cli]`                |Open Net-Viewer or print a numeric socket snapshot                                  |
 
-`CLAUDE.md` is the contributor manual (commands, lints, architecture, the gate rules). `INVARIANTS.md` I1-I8
-lists each security rule with the test that fails if it breaks; a change to one needs a test and a `SECURITY.md` note.
-`.claude/skills/` holds the repo skills, usable from Claude Code as `/<name>` or as plain checklists:
+curl -s http://127.0.0.1:8797/query \
+  -H "authorization: Bearer $(cat ~/.cg-researcher/secrets/api.key)" \
+  -H 'content-type: application/json' \
+  -d '{"query":"What do my notes say about recovery testing?"}'
 
-| skill | purpose |
-|---|---|
-| `verify` | the local gate: `scripts/lint.sh` (hygiene, fmt, clippy `-D warnings`, shellcheck, actionlint, plutil), `cargo deny`, then `init` / `selftest` / `audit verify` in a throwaway home |
-| `invariants-check` | maps a diff to I1-I8 and the tests that cover each |
-| `config-guard` | asserts `config/cg.toml` still ships fail-closed (offline, external off, connectors off, loopback, quoted booleans refused, UI overlay whitelist) |
-| `run-cg-researcher` | runs the real binary against the mock model: throwaway home, index, `serve`, `/query`, UI pairing, Playwright, audit verify |
-| `optimizer` | measure-first performance and size work that must not weaken a guard |
-| `gotchas` | session-tested traps: Rosetta shells, Homebrew rust, port 11434 vs Ollama, unrun macOS CI, `macos-latest` vs 27, lock and deny handling |
+The user guide covers setup, migration, troubleshooting and the streaming API.
 
-Lint first (`scripts/lint.sh`, the same script CI's `lint` job runs on an Apple Silicon runner; `--hygiene`
-alone checks that no data dir, log, key or encrypted blob is tracked), then run the code; the full suite is
-CI's job. The lints are strict: `unsafe_code = "forbid"`, `clippy::unwrap_used` warns under `-D warnings`,
-`dbg_macro` denies.
+</details>
 
-## Status
+Development
 
-Verified in this repo's sandbox on Linux x86_64. That covers the unit and mock-HTTP tests (graph, audit,
-connectors, external providers via a loopback mock, the UI/HTTP security surface; `cargo test --workspace
---locked` prints the current count) plus one Keychain test that is `#[ignore]` off macOS, clippy `-D warnings` on 1.99.1, an MSRV 1.90 check, `cargo deny`
-(advisories, bans, licenses, sources), and an end-to-end smoke with the mock model: `init`, `index`,
-`selftest` (10-node graph), `serve`, `/query` with sources, the DNS-rebinding (421) and missing-bearer (401)
-refusals, UI pairing, `audit verify`. Earlier passes also covered three concurrent `maintain` runs, a
-headless-browser pass over every tab, the Playwright specs in Chromium and WebKit (including every
-intermediate frame of a streamed answer), bounded fuzz runs per target with no open crashes, 74% line
-coverage, and the `.app` launch path. **macOS**: GitHub's macOS runners (macos-15, macos-latest) pass fmt,
-clippy, tests, the MSRV build, the throwaway-keychain round trip and `install.sh --service` / launchd /
-uninstall ([ci.yml runs on `main`](https://github.com/cgfixit/cg-researcher/actions/workflows/ci.yml?query=branch%3Amain)). That is a CI runner, not a daily-use Mac: Gatekeeper on a
-downloaded `.app`, a real login keychain and Safari itself are still unverified. Windows is unsupported. Real Anthropic/xAI/Telegram/Twilio/Google/SerpAPI
-accounts were not exercised.
+Start with CLAUDE.md, the contributor manual, and
+I1–I8, which map security rules to enforcing tests.
+An invariant change needs a test and a SECURITY.md note.
 
-See [SECURITY.md](SECURITY.md) and [INVARIANTS.md](INVARIANTS.md).
+./init.sh                     # developer bootstrap: locked deps, fmt, clippy, tests, init
+./scripts/lint.sh             # shared local/CI lint gate
+cargo test -p cg-researcher --locked docs_cli
 
-## License
+Use a throwaway home for runtime experiments. The workspace forbids unsafe; clippy runs with
+-D warnings. Repository skills cover verification, invariants, closed defaults, runtime smoke,
+optimization and platform gotchas; see the skills index.
 
-MIT, see [LICENSE](LICENSE). Portions derive from [waku-agent](https://github.com/ShenSeanChen/waku-agent)
-(MIT, Sean Chen) and from CyClaw / CG-agent-harness / CyClaw-Net-Viewer by the same copyright holder as
-this repository; the attribution in `LICENSE` stays with any redistribution.
+<details>
+<summary><strong>Workspace and toolchain</strong></summary>
+
+|Path                                     |Responsibility                                                               |
+|-----------------------------------------|-----------------------------------------------------------------------------|
+|`crates/cg-graph`                        |Generic StateGraph, conditional edges, bounded invocation                    |
+|`crates/cg-core`                         |Policy graph, config, RAG, models, guards, egress, tuning, secrets           |
+|`crates/cg-audit`                        |Chained protobuf log, signed head, concurrent append                         |
+|`crates/cg-connectors`                   |Tools, gateways and third-party integrations                                 |
+|`crates/cg-researcher`                   |CLI, loopback HTTP server and embedded `ui/`                                 |
+|`config/`, `packaging/macos/`, `scripts/`|Defaults, app packaging and operational scripts                              |
+|`e2e/`, `fuzz/`                          |Playwright Chromium/WebKit specs and attachment/sanitizer/stream fuzz targets|
+
+• rust-toolchain.toml: Rust 1.99.1, rustfmt and clippy via rustup.
+• Cargo.toml: edition 2024, MSRV 1.90, centralized dependency versions; committed lockfile and --locked builds.
+• deny.toml: license/source checks and bans on telemetry SDKs, OpenSSL and native-tls.
+• HTTP uses reqwest/rustls; SQLite is bundled with FTS5; prost/protox avoid a protoc dependency;
+macOS Keychain uses Security.framework. Playwright and fuzz dependencies have their own lockfiles.
+
+See contributor commands for full test, coverage, fuzz and browser workflows.
+
+</details>
+
+License
+
+MIT.
