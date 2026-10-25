@@ -10,7 +10,7 @@ you enable.
 |---|---|---|
 | From source (supported) | `./scripts/install.sh` or double-click `install.command` | Needs Xcode CLT + a native arm64 rustup (not Homebrew `rust`); refuses to run under Rosetta. Builds `--locked`, ad-hoc signs, installs `~/.cg-researcher/bin/cg-researcher`. |
 | As a background service | `./scripts/install.sh --service --maintenance` | launchd `com.cgfixit.cg-researcher` (serve) + `.maintenance` (daily 03:15 health check). |
-| App bundle | download `cg-researcher-macos-arm64.app.zip` from a release, check `shasum -a 256 -c`, unzip to `/Applications` | Ad-hoc signed, **not notarized**: first launch needs right-click → Open. Double-click starts a server (or reuses the launchd one) and opens the UI. Tagged releases are reviewed drafts; `nightly-YYYYMMDD-<sha>` prereleases are cut automatically each morning from an unreleased `main` and are not reviewed. |
+| App bundle | download `cg-researcher-macos-arm64.app.zip` from a release, check `shasum -a 256 -c`, unzip to `/Applications` | Ad-hoc signed, **not notarized**: first launch needs right-click → Open. Double-click starts a server (or reuses the launchd one) and opens the UI. Tagged `v*` releases are published immediately; `nightly-YYYYMMDD-<sha>` prereleases are cut automatically each morning from an unreleased `main` and are not reviewed. |
 
 Upgrading from the old `cg-agent` name: `install.sh` moves `~/.cg-agent` to `~/.cg-researcher` and
 retires the old launchd jobs. Re-save API keys once (Keychain items can't be renamed without reading

@@ -31,5 +31,5 @@ an operator's Mac, `R` = against the real third-party service. Nothing is `M` or
 | macOS | Keychain secrets | done | L (compiled), CI (throwaway keychain round trip) |
 | macOS | launchd service + daily maintenance job | done | CI (`install-smoke`, push/schedule only) |
 | macOS | install/uninstall `.sh` + `.command`, legacy `~/.cg-agent` migration | done | shellcheck |
-| macOS | Apple Silicon `.app` bundle, ad-hoc signed, draft release | done; not notarized | L (launch path), CI (release.yml build) |
+| macOS | Apple Silicon `.app` bundle, ad-hoc signed, public release on a `v*` tag | done; not notarized | L (launch path), CI (release.yml build) |
 | Dropped | Long-term memory (semantic/episodic/procedural) | removed by request | — |

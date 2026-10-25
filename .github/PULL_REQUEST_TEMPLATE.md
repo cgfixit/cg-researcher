@@ -161,7 +161,7 @@ Run `gh workflow run release.yml --ref <this-branch>` for a non-publishing build
 Check the universal CLI has arm64 AND x86_64 slices, signatures and SHA-256.
 Before a HUMAN creates a v* tag: reconcile Cargo workspace version, rendered
 Info.plist version and tag, inspect artifacts/checksums and current CI/security.
-Tag runs create a DRAFT release; manual branch runs upload artifacts only.
+Tag runs publish a public GitHub Release immediately; manual branch runs upload artifacts only.
 Verify public-repository app provenance with `gh attestation verify <zip> --repo cgfixit/cg-researcher`.
 Ad-hoc signing is NOT Developer ID or notarization; document Gatekeeper
 quarantine and Keychain identity/rebuild prompts honestly. No tag/publish/signing

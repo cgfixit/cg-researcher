@@ -98,8 +98,9 @@ client is an `Egress`, which pins hosts, refuses redirects and proxies, and chec
 - sqlite-vec was evaluated and rejected: pre-1.0 C (~10k lines), a past heap overflow
   (CVE-2024-46488, npy parsing, fixed in 0.1.3), a null `pzErrMsg` write in `sqlite3_vec_init`, and
   brute-force KNN that gives no speed advantage over the in-RAM Rust scan at this scale.
-- Release artifacts: ad-hoc signed, SHA-256 published, draft-only, build provenance attested when the
-  repository is public.
+- Release artifacts: ad-hoc signed, SHA-256 published with the GitHub Release. A `v*` tag publishes
+  that release immediately; nightlies stay prereleases and are not Latest. Build provenance is
+  attested when the repository is public.
 
 ## Web UI threat model
 
