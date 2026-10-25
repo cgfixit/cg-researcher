@@ -156,12 +156,16 @@ Exercise throwaway Keychain, launchd service + maintenance, installer/uninstalle
 and purge ONLY in an isolated test account/home, never against operator data.
 Round-trip unzip with ditto and re-check signature; smoke app/UI pairing,
 server reuse and no duplicate listener. Record model/network-dependent skips.
-release.yml already builds the arm64 app + universal CLI; do not duplicate it.
-Run `gh workflow run release.yml --ref <this-branch>` for a non-publishing build.
+release.yml already builds the arm64 app + universal CLI and publishes them; do not duplicate that build.
+A manual `gh workflow run release.yml --ref <this-branch>` with no inputs publishes an unreviewed
+`nightly-YYYYMMDD-<sha7>` prerelease for that SHA (not Latest). It is not an artifact-only build.
+Re-running a SHA whose auto release already has the app and CLI assets skips the rebuild instead of failing.
+Dispatch a branch only when you intend to publish that tip.
 Check the universal CLI has arm64 AND x86_64 slices, signatures and SHA-256.
 Before a HUMAN creates a v* tag: reconcile Cargo workspace version, rendered
 Info.plist version and tag, inspect artifacts/checksums and current CI/security.
-Tag runs publish a public GitHub Release immediately; manual branch runs upload artifacts only.
+A `v*` tag push publishes a public GitHub Release immediately (not a draft). Manual dispatch and the
+daily schedule publish prereleases and do not move GitHub Latest.
 Verify public-repository app provenance with `gh attestation verify <zip> --repo cgfixit/cg-researcher`.
 Ad-hoc signing is NOT Developer ID or notarization; document Gatekeeper
 quarantine and Keychain identity/rebuild prompts honestly. No tag/publish/signing
