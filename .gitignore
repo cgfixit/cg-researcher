@@ -7,7 +7,7 @@ target/
 *.tmp
 # coverage / profiling / perf scratch (cargo-llvm-cov, Instruments, flamegraph, perf, cargo-mutants)
 lcov.info
-summary.txt
+/summary.txt
 *.profraw
 *.profdata
 cargo-timing*.html
@@ -35,6 +35,8 @@ secrets/
 *.sqlite3-wal
 *.sqlite3-shm
 *.db
+# committed test fixtures (public, synthetic) are the one exception; scripts/lint.sh carves out the same dir
+!crates/*/tests/fixtures/*.db
 # audit chain (keyed fingerprints, still private), its head and lock
 *.pb
 *.pb.head
@@ -57,6 +59,7 @@ npm-debug.log*
 *.p12
 *.pfx
 *.der
+!crates/*/tests/fixtures/*.der
 *.jks
 *.keystore
 *.gpg
@@ -92,7 +95,8 @@ id_ed25519*
 .VolumeIcon.icns
 .com.apple.timemachine.donotpresent
 # the macOS custom-icon file is literally "Icon\r"; git drops one trailing CR, hence two
-Icon
+Icon
+
 
 # ---- editors / tooling ----
 .idea/

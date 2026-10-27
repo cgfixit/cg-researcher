@@ -45,7 +45,10 @@ section "hygiene: nothing private is tracked"
 # state/, corpus/ and index/ are generic names, so like .gitignore they only count at the
 # repo root (a data dir rooted at the checkout); a nested docs/index/ or src/state/ is fine.
 private_re='^(state|corpus|index)/|(^|/)(secrets|logs|\.cg-researcher|\.cg-agent|node_modules|target|playwright-report|test-results)/|\.(enc|key|pem|p12|pfx|der|jks|keystore|gpg|pgp|mobileprovision|provisionprofile|keychain|keychain-db|token|secret|log|pb|pb\.head|pb\.lock|sqlite3|sqlite3-journal|sqlite3-wal|sqlite3-shm|db)$|(^|/)(\.env(\..*)?|\.netrc|id_rsa.*|id_ed25519.*|ui-settings\.toml|sms_pin|secrets\.(json|toml|yaml|yml|env)|\.DS_Store)$'
-tracked_private="$(git ls-files | grep -E "$private_re" | grep -vE '(^|/)\.env\.example$' || true)"
+# Public test fixtures (a sample .db for RAG, a DER public cert for egress pinning) are the one
+# exception, matching the negations in .gitignore. Keys stay banned there (.key/.pem/.p12 not carved out).
+fixture_re='^crates/[^/]+/tests/fixtures/[^/]+\.(db|der)$'
+tracked_private="$(git ls-files | grep -E "$private_re" | grep -vE '(^|/)\.env\.example$' | grep -vE "$fixture_re" || true)"
 if [[ -n "$tracked_private" ]]; then
   bad "private or generated files are tracked:"; indent "$tracked_private" >&2
 else echo "ok: no data dirs, logs, keys or encrypted blobs tracked"; fi
@@ -64,6 +67,13 @@ for s in secrets/api.key secrets/audit.key x/secrets/sms_pin sms_pin logs/serve.
          fuzz/corpus/x fuzz/artifacts/x target/x dist/x .claude/settings.local.json; do
   git check-ignore -q "$s" || bad ".gitignore does not cover: $s"
 done
+# Negative sentinels: patterns must not be so broad they hide legitimate files.
+for s in crates/cg-core/tests/fixtures/sample.db crates/cg-core/tests/fixtures/pin.der docs/summary.txt; do
+  if git check-ignore -q "$s"; then bad ".gitignore wrongly ignores: $s"; fi
+done
+for s in summary.txt x.db x.der state/x.db; do
+  git check-ignore -q "$s" || bad ".gitignore does not cover: $s"
+done
 # gitignore has no trailing comments (git treats "pattern  # note" as a literal pattern).
 if grep -nE '^[^#[:space:]].*[[:space:]]#' .gitignore; then bad ".gitignore has trailing comments"; fi
 echo "ok: .gitignore sentinels"
@@ -80,7 +90,7 @@ big="$(git ls-files -z | xargs -0 wc -c 2>/dev/null | awk '$1 > 1048576 && $2 !=
 if [[ -n "$big" ]]; then bad "tracked files over 1 MiB:"; printf '  %s\n' "$big" >&2; fi
 
 # Staged or working-tree additions get the same scan, so a bad `git add` is caught before commit.
-staged_private="$(git diff --cached --name-only --diff-filter=A | grep -E "$private_re" || true)"
+staged_private="$(git diff --cached --name-only --diff-filter=A | grep -E "$private_re" | grep -vE "$fixture_re" || true)"
 [[ -z "$staged_private" ]] || { bad "staged for commit:"; indent "$staged_private" >&2; }
 
 if [[ "$hygiene_only" == 1 ]]; then [[ "$fail" == 0 ]]; exit; fi

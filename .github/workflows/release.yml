@@ -23,9 +23,10 @@ on:
   push:
     tags: ["v*"]
   schedule:
-    # Actions cron is UTC only. Both fire; `gate` keeps the one where it is 09:xx
-    # in America/New_York (13:07 UTC under EDT, 14:07 UTC under EST). Off the hour
-    # because GitHub delays runs queued at :00.
+    # Actions cron is UTC only. Both fire; `gate` keeps the one whose slot is 09:07
+    # in America/New_York today (13:07 UTC under EDT, 14:07 UTC under EST), judged
+    # from github.event.schedule so a queued, late-starting run still counts. Off
+    # the hour because GitHub delays runs queued at :00. Edit both places together.
     - cron: "7 13 * * *"
     - cron: "7 14 * * *"
   workflow_dispatch:
@@ -59,6 +60,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
           SHA: ${{ github.sha }}
+          SCHEDULE: ${{ github.event.schedule }}
         run: |
           set -euo pipefail
           public=false
@@ -167,9 +169,14 @@ jobs:
               fi
               ;;
             schedule)
-              hour="$(TZ=America/New_York date +%H)"
-              if [[ "$hour" != "09" ]]; then
-                echo "schedule: $hour:xx in America/New_York, not the 09:xx run; skipping"
+              # Decide by which cron fired, not by the clock when the job starts:
+              # GitHub queues scheduled runs, and a run delayed past 09:59 used to
+              # skip on both crons. Keep the cron whose nominal 13:07 UTC slot is
+              # 09:07 in New York today (EDT, -0400); otherwise the 14:07 one (EST).
+              offset="$(TZ=America/New_York date -d "$(date -u +%F) 13:07 UTC" +%z)"
+              if [[ "$offset" == "-0400" ]]; then want="7 13 * * *"; else want="7 14 * * *"; fi
+              if [[ "$SCHEDULE" != "$want" ]]; then
+                echo "schedule: cron '$SCHEDULE' is not today's 09:07 America/New_York slot ('$want'); skipping"
               else
                 git cat-file -e "${SHA}^{commit}"
                 collect_names
