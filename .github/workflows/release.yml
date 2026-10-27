@@ -23,9 +23,10 @@ on:
   push:
     tags: ["v*"]
   schedule:
-    # Actions cron is UTC only. Both fire; `gate` keeps the one where it is 09:xx
-    # in America/New_York (13:07 UTC under EDT, 14:07 UTC under EST). Off the hour
-    # because GitHub delays runs queued at :00.
+    # Actions cron is UTC only. Both fire; `gate` keeps the cron that is 09:07 in
+    # America/New_York today (13:07 UTC under EDT, 14:07 UTC under EST), keyed on
+    # which cron fired, not the wall clock, since GitHub can start a run an hour
+    # or more late. Off the hour because GitHub delays runs queued at :00.
     - cron: "7 13 * * *"
     - cron: "7 14 * * *"
   workflow_dispatch:
@@ -59,6 +60,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
           SHA: ${{ github.sha }}
+          SCHEDULE: ${{ github.event.schedule }}
         run: |
           set -euo pipefail
           public=false
@@ -167,9 +169,18 @@ jobs:
               fi
               ;;
             schedule)
-              hour="$(TZ=America/New_York date +%H)"
-              if [[ "$hour" != "09" ]]; then
-                echo "schedule: $hour:xx in America/New_York, not the 09:xx run; skipping"
+              # Key on the cron that fired, not the hour the run started: a
+              # delayed 13:07 run starting at 10:46 EDT is still today's nightly.
+              # DST edge: New York switches at 06:00/07:00 UTC, so the zone read
+              # here matches the one at the cron's nominal time unless GitHub
+              # delays the run by more than ~16h, past the next switch.
+              zone="$(TZ=America/New_York date +%Z)"
+              case "$zone:$SCHEDULE" in
+                "EDT:7 13 * * *" | "EST:7 14 * * *") keep=true ;;
+                *) keep=false ;;
+              esac
+              if [[ "$keep" != true ]]; then
+                echo "schedule: cron '$SCHEDULE' is not 09:07 in America/New_York under $zone; skipping"
               else
                 git cat-file -e "${SHA}^{commit}"
                 collect_names
