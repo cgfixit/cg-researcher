@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 
 mod chat;
+mod research;
 mod runtime;
 mod serve;
 
@@ -75,6 +76,26 @@ enum Cmd {
     Netviewer {
         #[arg(long)]
         cli: bool,
+    },
+    /// Long-form research: plan sub-questions, answer each with an ordinary
+    /// local turn, then synthesize a cited report. Saved after every step
+    /// under `state/research/<id>/`; `--resume <id>` continues a stopped job.
+    /// Never asks the external model and never runs write tools.
+    Research {
+        /// The research question (omit with --resume or --list).
+        question: Option<String>,
+        /// Continue a stopped or killed job by id.
+        #[arg(long, conflicts_with = "question")]
+        resume: Option<String>,
+        /// List saved jobs.
+        #[arg(long, conflicts_with_all = ["question", "resume"])]
+        list: bool,
+        /// Most sub-questions the planner may produce (1-12).
+        #[arg(long, default_value_t = 6)]
+        steps: usize,
+        /// Wall-clock budget for this invocation, in minutes.
+        #[arg(long, default_value_t = 60)]
+        minutes: u64,
     },
 }
 
@@ -259,7 +280,95 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         Cmd::Ui { print } => ui(home, print).await,
         Cmd::App => app(home).await,
         Cmd::Netviewer { cli } => netviewer(&home, cli).await,
+        Cmd::Research {
+            question,
+            resume,
+            list,
+            steps,
+            minutes,
+        } => research_cmd(home, question, resume, list, steps, minutes).await,
     }
+}
+
+async fn research_cmd(
+    home: PathBuf,
+    question: Option<String>,
+    resume: Option<String>,
+    list: bool,
+    steps: usize,
+    minutes: u64,
+) -> anyhow::Result<()> {
+    let r = Runtime::load(home)?;
+    let root = r.layout.state().join("research");
+    if list {
+        let mut ids: Vec<String> = std::fs::read_dir(&root)
+            .map(|d| {
+                d.filter_map(|e| e.ok()?.file_name().into_string().ok())
+                    .filter(|n| research::valid_id(n))
+                    .collect()
+            })
+            .unwrap_or_default();
+        ids.sort();
+        for id in ids {
+            if let Ok(j) = research::load(&research::job_dir(&r.layout.state(), &id)) {
+                let total = j.plan.as_ref().map_or(0, Vec::len);
+                println!(
+                    "{id}  {}/{total} steps  {}  {}",
+                    j.steps.len(),
+                    if j.report.is_some() && j.remaining() == 0 {
+                        "done"
+                    } else {
+                        "open"
+                    },
+                    j.question
+                );
+            }
+        }
+        return Ok(());
+    }
+    let (dir, mut job) = match (resume, question) {
+        (Some(id), _) => {
+            anyhow::ensure!(research::valid_id(&id), "not a research job id: {id}");
+            let dir = research::job_dir(&r.layout.state(), &id);
+            let job = research::load(&dir)?;
+            (dir, job)
+        }
+        (None, Some(q)) if !q.trim().is_empty() => {
+            let id = research::new_id()?;
+            let dir = research::job_dir(&r.layout.state(), &id);
+            let job = research::Job::new(id, q.trim().to_string(), steps);
+            research::save(&dir, &job)?;
+            (dir, job)
+        }
+        _ => anyhow::bail!("give a research question, --resume <id> or --list"),
+    };
+    let (agent, _, _) = r.agent().await?;
+    r.event(
+        "research_start",
+        format!("job={} resumed_steps={}", job.id, job.steps.len()),
+    );
+    let opts = research::Opts {
+        budget: std::time::Duration::from_secs(minutes.max(1) * 60),
+    };
+    let complete = research::run(&agent, &dir, &mut job, &opts, &|e, d| r.event(e, d)).await?;
+    if let Some(report) = &job.report {
+        println!("{report}");
+    }
+    eprintln!(
+        "\n[research {}] {} · report: {}",
+        job.id,
+        if complete {
+            "complete".to_string()
+        } else {
+            format!(
+                "{} step(s) left; continue with `cg-researcher research --resume {}`",
+                job.remaining(),
+                job.id
+            )
+        },
+        dir.join("report.md").display()
+    );
+    Ok(())
 }
 
 fn spawn_gateways(gateways: Vec<Arc<dyn cg_core::tools::Gateway>>, slot: Arc<AgentSlot>) {

@@ -102,6 +102,14 @@ async fn chat(axum::Json(req): axum::Json<Value>) -> Response {
         Value::String(s) => s.chars().count(),
         other => other.to_string().chars().count(),
     };
+    // `research` planning turn: answer with a JSON plan, as a real model would.
+    if dump.contains("Return only a JSON array of sub-questions") && req["stream"] != json!(true) {
+        let plan = r#"Here is the plan: ["What do the notes say about backups?", "What failed in the last restore test?", "what do the notes say about BACKUPS?", ""]"#;
+        return axum::Json(
+            json!({"model":"qwen3:8b","choices":[{"message":{"role":"assistant","content":plan}}]}),
+        )
+        .into_response();
+    }
     let answer = format!(
         "MOCK ANSWER: saw {n} chars; attachment={}.",
         if dump.contains("ATTACH-OK") {

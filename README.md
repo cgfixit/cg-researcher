@@ -50,6 +50,7 @@ local inference and inspectable decisions, with optional services behind explici
 |Policy             |Ten-node graph, bounded tool loop, origin-aware permissions, protected context and per-turn external consent|[Graph and gates](#policy-graph)             |
 |External models    |Anthropic Claude / xAI Grok; three gates, payload rules, budgets and no tools                               |[External models](#external-models)          |
 |Connectors         |Web search, Gmail, Google Calendar, Telegram, Twilio SMS, 1Password metadata and network snapshots          |[Connector map](#connectors)                 |
+|Research           |Multi-step local research jobs: planned sub-questions, per-step checkpoints, resume, cited report           |[User guide](docs/user-guide.md#long-form-research)|
 |Audit and operation|HMAC-chained protobuf log, signed head, concurrent-writer locking, selftest, launchd and maintenance        |[Operation](#operation-and-verification)     |
 
 See the [detailed feature inventory](docs/feature.md) for component status, and the
@@ -227,6 +228,7 @@ Every connector ships with `enabled = false`. Enable only what you need in
 
 |Connector    |Tools / role                      |Controls and limits                                                                                                                                                            |
 |-------------|----------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|`fetch_page` |`fetch_page`                      |One page as text, only from the exact hosts listed in cg.toml; HTTPS, no redirects, 2 MiB cap, untrusted output, not offered to remote origins.|
 |`web_search` |`web_search`                      |SerpAPI; public Google only with no resolved key and explicit opt-in. No switch to public Google after API rejection/quota failure; CAPTCHA/rate limits cause refusal/cooldown.|
 |`netconnect` |`net_neighbors`, `net_connections`|Allowlisted private/loopback IPv4 ranges; OS ARP cache and optional CyClaw-Net-Viewer socket snapshot on macOS.                                                                |
 |`telegram`   |Inbound gateway                   |Private DMs, numeric user-ID allowlist, optional confirmation codes.                                                                                                           |
@@ -302,6 +304,7 @@ Uninstall keeps your data; `--purge` requires typing `delete` before deleting th
 |`app`                              |Initialize if needed, start/reuse server, open paired UI                            |
 |`ui [--print]`                     |Pair with a running server; optionally print the URL                                |
 |`index`                            |Rebuild the corpus index                                                            |
+|`research "<q>"` / `--resume <id>`  |Long-form research job with saved steps; local only, no writes                      |
 |`selftest` / `maintain`            |Check configuration/runtime; record scheduled maintenance outcome                   |
 |`audit verify` / `audit tail -n 20`|Verify the chain / inspect recent records                                           |
 |`gateways`                         |Run Telegram/SMS gateways only                                                      |

@@ -19,7 +19,7 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 cargo test -p cg-core --locked <name>       # single test (substring match), e.g. `agent::tests::topology_`
 cargo test -p cg-core --locked keychain -- --ignored   # Keychain test (macOS only, needs a throwaway keychain)
-cargo run -p cg-researcher -- selftest      # runtime self-check; also: init, chat, serve, gateways, index, audit, google-auth, maintain, ui, app, netviewer
+cargo run -p cg-researcher -- selftest      # runtime self-check; also: init, chat, serve, gateways, index, research, audit, google-auth, maintain, ui, app, netviewer
 cargo deny check advisories bans licenses sources   # what audit.yml runs; `bans` is the no-telemetry rule (deny.toml)
 cargo llvm-cov --workspace --locked --summary-only --fail-under-lines 70   # CI coverage floor
 ```
@@ -69,8 +69,8 @@ Cargo workspace, five crates (`crates/*`):
 - **`cg-graph`**: small LangGraph-style `StateGraph` / `CompiledGraph` (nodes, routers, a single entry and a single sink). Generic; no policy.
 - **`cg-core`**: everything policy-bearing: `agent.rs` (builds the graph and all node logic), `config`, `rag` (SQLite FTS5 + embeddings), `llm` and `external` clients, `sanitizer` (injection scanning), `egress` (host-pinned HTTPS), `sandbox` (child-process env clearing), `secrets` / `keychain`, `settings` (UI overlay whitelist), `tune` (autotune), `attachments`, `tools`, `stream` (guarded token streaming: every delta is a prefix of the output-guarded text), `paths` (data-dir layout), `fsutil` (atomic owner-only writes). Agent tests live in `agent/tests.rs`.
 - **`cg-audit`**: protobuf audit records (`proto/`, compiled in `build.rs`), HMAC-SHA256 chained, signed head, cross-process append lock. Queries and senders are stored only as keyed fingerprints.
-- **`cg-connectors`**: Telegram, SMS, Gmail, Gcal, web search, 1Password, netconnect. Exposed as trait objects behind the tool gate.
-- **`cg-researcher`**: the binary. `main.rs` (CLI), `runtime.rs` (`run_turn`), `serve.rs` (axum-style loopback API + embedded web UI from `crates/cg-researcher/ui/`), `chat.rs`, `tests.rs`; `examples/mock_llm.rs` is the deterministic mock model.
+- **`cg-connectors`**: Telegram, SMS, Gmail, Gcal, web search, fetch_page (operator-pinned hosts), 1Password, netconnect. Exposed as trait objects behind the tool gate.
+- **`cg-researcher`**: the binary. `main.rs` (CLI), `runtime.rs` (`run_turn`), `serve.rs` (axum-style loopback API + embedded web UI from `crates/cg-researcher/ui/`), `chat.rs`, `research.rs` (long-form jobs: an outer loop of ordinary turns as `Origin::System`, never external, writes declined), `tests.rs`; `examples/mock_llm.rs` is the deterministic mock model.
 
 **The graph is the policy.** Every turn starts at `retrieve` and ends at `audit_logger`:
 

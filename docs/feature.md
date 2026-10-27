@@ -21,6 +21,8 @@ an operator's Mac, `R` = against the real third-party service. Nothing is `M` or
 | CI | UI e2e (Playwright Chromium + WebKit, incl. streaming frames), cargo-fuzz (attachments, sanitizer, stream), llvm-cov floor 70% | done; runs in Actions | L |
 | CI | `nightly-YYYYMMDD-<sha7>` prerelease (`.app` + universal CLI) on manual `workflow_dispatch`, and at 09:07 Eastern when `main` has no `v*` tag and no complete release for that commit | done; `release.yml` gate. Publish-on-dispatch not re-run on Actions in the change that added it | — |
 | Connectors | Web search: SerpAPI, opt-in public Google | done | L (mock) |
+| Connectors | `fetch_page`: one page as text from operator-pinned hosts (HTTPS, no redirects, 2 MiB cap) | done | L (unit + live fetch from the sandbox) |
+| Research | `research`: plan → one local turn per sub-question → cited synthesis; saved per step, `--resume`, time budget; never external, never writes | done | L (mock model) |
 | Connectors | netconnect (ARP, RFC1918 allowlist) + Net-Viewer sockets | partial (macOS paths) | L |
 | Connectors | Telegram gateway (numeric allowlist, private chats) | done | L (mock) |
 | Connectors | SMS via Twilio (E.164 allowlist + PIN, polling) | done; number is paid (~$1+/mo) | L (mock) |

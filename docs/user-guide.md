@@ -53,6 +53,22 @@ How answers are chosen: retrieval scores the question against your corpus (keywo
 confident match goes to the local model with the retrieved context. A weak match asks you whether
 to answer anyway locally, use the external model (if enabled), or stop.
 
+## Long-form research
+
+`cg-researcher research "<question>"` runs a job instead of a single turn: one planning turn splits the
+question into up to `--steps` sub-questions (default 6, at most 12), each sub-question gets an ordinary
+local turn (retrieval, tools, guardrails and audit exactly as in chat), and a final turn writes a cited
+answer from the collected notes. `--minutes` (default 60) bounds the wall-clock time of one invocation.
+
+- Progress is saved after every step in `~/.cg-researcher/state/research/<id>/` (`job.json`, `report.md`,
+  owner-only). If the job is killed or runs out of time, `cg-researcher research --resume <id>` continues
+  where it stopped; `cg-researcher research --list` shows saved jobs.
+- Research turns never ask the external model and never run write tools: a write a model requests is
+  declined and audited. Use `chat` with `/ext` when you want an external model for a specific question.
+- With `web_search` enabled, steps can search the web; with `fetch_page` enabled, they can read pages on
+  the hosts you allowed (see Connectors). Web text is untrusted and marks the step as protected context.
+- The audit log records the job id and step counts (`research_*` events), not the questions.
+
 ## External models (optional)
 
 1. `app.mode = "hybrid"` and `external.enabled = true` (both in `cg.toml` or the UI).
@@ -72,6 +88,8 @@ All start off. Enable one in `cg.toml`, provide its secret reference (`env:NAME`
 `keychain:cg-researcher/NAME` or `file:NAME` under `secrets/`), then `cg-researcher selftest`.
 Gmail and Calendar also need `cg-researcher google-auth`. Telegram and SMS need a non-empty allowlist or they
 refuse to start; SMS also needs the PIN from `secrets/sms_pin`.
+`fetch_page` reads one page as plain text, only from the exact hosts in `[connectors.fetch_page] hosts`
+(HTTPS, no redirects, HTML or plain text up to 2 MiB); enabling it with no hosts is a startup error.
 
 ## Maintenance and audit
 
