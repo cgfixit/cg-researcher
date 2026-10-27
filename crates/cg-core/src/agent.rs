@@ -50,6 +50,8 @@ pub const NODES: &[&str] = &[
 
 const MAX_ANSWER_CHARS: usize = 24_000;
 const TOOL_TIMEOUT: Duration = Duration::from_secs(90);
+/// Smallest tool result shown once the context budget is spent.
+const MIN_TOOL_CHARS: usize = 1_000;
 
 pub struct TurnRequest {
     pub query: String,
@@ -105,6 +107,9 @@ pub struct TurnState {
     decided: Vec<Decided>,
     tool_log: Vec<ToolDecision>,
     iterations: usize,
+    /// Characters of the model's context still free for tool output, after
+    /// attachments and corpus context took their share in `first_messages`.
+    ctx_left: usize,
     tainted: bool,
     /// Set by route_by_score: an explicit, permitted "ask external" request.
     prefer_external_ok: bool,
@@ -378,6 +383,7 @@ impl Agent {
             decided: Vec::new(),
             tool_log: Vec::new(),
             iterations: 0,
+            ctx_left: 0,
             tainted: false,
             prefer_external_ok: false,
             answer: String::new(),
@@ -614,9 +620,36 @@ fn system_prompt(d: &Deps, _s: &TurnState) -> String {
 
 fn first_messages(d: &Deps, s: &mut TurnState) {
     let mut user = String::new();
+    // One budget for everything variable in the prompt: attachments first
+    // (the operator chose them), then corpus hits, then tool output.
+    let mut budget = d.local_tuning.context_chars;
+    let mut blocks = Vec::new();
+    let mut images = Vec::new();
+    for a in &s.req.attachments {
+        let n = a.text.as_ref().map_or(0, |t| t.chars().count());
+        let a = if n > budget {
+            let mut cut = a.clone();
+            cut.text = a.text.as_ref().map(|t| t.chars().take(budget).collect());
+            cut.truncated = true;
+            budget = 0;
+            cut
+        } else {
+            budget -= n;
+            a.clone()
+        };
+        if let Some((block, _flagged)) = as_prompt_block(&a) {
+            // Attachments are third-party content: taint the turn.
+            s.tainted = true;
+            blocks.push(block);
+        } else if a.kind == Kind::Png
+            && let Some(b64) = &a.png_base64
+        {
+            s.tainted = true;
+            images.push(b64.clone());
+        }
+    }
     if s.confident {
         user.push_str("Local knowledge base context:\n");
-        let mut budget = d.local_tuning.context_chars;
         for h in &s.retrieval.hits {
             let (clean, _) = sanitize_untrusted(&h.text);
             let n = clean.chars().count();
@@ -633,20 +666,10 @@ fn first_messages(d: &Deps, s: &mut TurnState) {
         }
         user.push('\n');
     }
-    let mut images = Vec::new();
-    for a in &s.req.attachments {
-        if let Some((block, flagged)) = as_prompt_block(a) {
-            // Attachments are third-party content: taint the turn.
-            s.tainted = true;
-            let _ = flagged;
-            user.push_str(&block);
-            user.push('\n');
-        } else if a.kind == Kind::Png
-            && let Some(b64) = &a.png_base64
-        {
-            s.tainted = true;
-            images.push(b64.clone());
-        }
+    s.ctx_left = budget;
+    for block in blocks {
+        user.push_str(&block);
+        user.push('\n');
     }
     user.push_str(&s.req.query);
     let content = if images.is_empty() || d.cfg.llm.vision_model.is_empty() {
@@ -860,13 +883,18 @@ async fn tool_exec(d: &Deps, mut s: TurnState) -> TurnState {
         };
         let mut output = redact(&output);
         // Cut before wrapping, so a full-size result keeps its closing tag.
-        if output.chars().count() > d.cfg.tools.max_tool_output_chars {
-            output = output
-                .chars()
-                .take(d.cfg.tools.max_tool_output_chars)
-                .collect::<String>()
-                + "\n[truncated]";
+        // The cap is also bounded by what is left of the context budget
+        // (never below a useful minimum, so a full context still gets a
+        // readable DENIED or error line).
+        let cap = d
+            .cfg
+            .tools
+            .max_tool_output_chars
+            .min(s.ctx_left.max(MIN_TOOL_CHARS));
+        if output.chars().count() > cap {
+            output = output.chars().take(cap).collect::<String>() + "\n[truncated]";
         }
+        s.ctx_left = s.ctx_left.saturating_sub(output.chars().count());
         if spec.as_ref().is_some_and(|t| t.untrusted_output) && item.allowed {
             let (clean, _) = sanitize_untrusted(&output);
             s.tainted = true;

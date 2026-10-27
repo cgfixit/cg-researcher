@@ -303,7 +303,29 @@ impl Index {
         collect_files(corpus, &mut files, 0)?;
         let mut pieces: Vec<(String, usize, String)> = Vec::new();
         for f in &files {
-            let bytes = std::fs::read(f)?;
+            // One bad file must not fail the whole index: skip what cannot be
+            // read, and check the size before reading instead of after.
+            match std::fs::metadata(f) {
+                Ok(m) if m.len() as usize <= limits.max_bytes => {}
+                Ok(_) => {
+                    tracing::warn!(
+                        "index: skipping {} (over attachments.max_bytes)",
+                        f.display()
+                    );
+                    continue;
+                }
+                Err(e) => {
+                    tracing::warn!("index: skipping {}: {e}", f.display());
+                    continue;
+                }
+            }
+            let bytes = match std::fs::read(f) {
+                Ok(b) => b,
+                Err(e) => {
+                    tracing::warn!("index: skipping {}: {e}", f.display());
+                    continue;
+                }
+            };
             let name = f
                 .file_name()
                 .map(|s| s.to_string_lossy().into_owned())
@@ -361,16 +383,21 @@ fn collect_files(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) -> std::io::R
     if depth > 8 || !dir.is_dir() {
         return Ok(());
     }
+    // The corpus root itself must be readable; below it, an unreadable
+    // directory or entry is skipped with a warning.
     for e in std::fs::read_dir(dir)? {
-        let e = e?;
-        let ft = e.file_type()?;
+        let Ok(e) = e else { continue };
+        let Ok(ft) = e.file_type() else { continue };
         if ft.is_symlink() {
             continue; // never follow links out of the corpus
         }
         let p = e.path();
         if ft.is_dir() {
-            collect_files(&p, out, depth + 1)?;
-        } else if matches!(
+            if let Err(err) = collect_files(&p, out, depth + 1) {
+                tracing::warn!("index: skipping {}: {err}", p.display());
+            }
+        } else if ft.is_file() // not a FIFO or socket, which would block `read`
+            && matches!(
             p.extension()
                 .and_then(|s| s.to_str())
                 .map(str::to_ascii_lowercase)
@@ -612,6 +639,26 @@ mod tests {
             text: t.into(),
             embedding: e,
         }
+    }
+
+    #[tokio::test]
+    async fn rebuild_skips_oversized_and_non_regular_files() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let corpus = dir.path().join("corpus");
+        std::fs::create_dir_all(corpus.join("sub")).expect("mk");
+        std::fs::write(corpus.join("ok.md"), "backups go to the NAS").expect("w");
+        std::fs::write(corpus.join("big.txt"), "x".repeat(2048)).expect("w");
+        std::fs::create_dir(corpus.join("sub/dir.md")).expect("dir named like a file");
+        let limits = crate::config::AttachmentConfig {
+            max_bytes: 1024,
+            ..Default::default()
+        };
+        let idx = Index::open(dir.path().join("rag.sqlite3")).expect("open");
+        let (files, chunks, _) = idx
+            .rebuild(&corpus, None, "e", 400, 40, &limits)
+            .await
+            .expect("one oversized file does not fail the index");
+        assert_eq!((files, chunks), (2, 1), "ok.md indexed, big.txt skipped");
     }
 
     #[test]

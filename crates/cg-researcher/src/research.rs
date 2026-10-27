@@ -327,7 +327,10 @@ pub async fn run(
     if job.report.is_none() && !job.steps.is_empty() {
         eprintln!("[research {}] synthesizing", job.id);
         let lim = &agent.config().attachments;
-        let text = notes(job, lim.max_text_chars);
+        // Size the notes to the model's context so every step keeps a fair
+        // share, instead of the turn cutting the attachment's tail off.
+        let room = agent.local_tuning().1.context_chars.min(lim.max_text_chars);
+        let text = notes(job, room);
         let att = attachments::parse("research-notes.md", text.as_bytes(), lim)?;
         let r = agent
             .run(request(synth_prompt(&job.question), vec![att]))

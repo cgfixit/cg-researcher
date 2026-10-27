@@ -221,14 +221,19 @@ impl ExternalClient {
             .await
             .map_err(|e| LlmError::Http(crate::sanitizer::redact(&describe_send_error(&e))))?;
         let status = resp.status();
-        let v: Value = resp.json().await.map_err(|_| LlmError::Shape)?;
+        let body = read_capped(resp).await?;
+        // Status first: a 502/529 from a proxy or overloaded provider is often
+        // HTML, and must surface as that status, not as "unexpected shape".
         if !status.is_success() {
+            let msg = serde_json::from_slice::<Value>(&body)
+                .map(|v| error_message(&v).to_string())
+                .unwrap_or_else(|_| "non-JSON error body".into());
             return Err(LlmError::Http(format!(
                 "{status}: {}",
-                crate::sanitizer::redact(error_message(&v))
+                crate::sanitizer::redact(&msg)
             )));
         }
-        Ok(v)
+        serde_json::from_slice(&body).map_err(|_| LlmError::Shape)
     }
 
     /// One stateless text completion. `images` are base64 PNGs and are only
@@ -308,6 +313,32 @@ fn urlencoding(s: &str) -> String {
     s.chars()
         .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '_' | ':'))
         .collect()
+}
+
+/// Provider responses are small (2,048 output tokens by default); refuse
+/// anything far larger instead of buffering it whole.
+const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+
+async fn read_capped(mut resp: reqwest::Response) -> Result<Vec<u8>, LlmError> {
+    let too_large = || LlmError::Http("provider response too large".into());
+    if resp
+        .content_length()
+        .is_some_and(|n| n as usize > MAX_RESPONSE_BYTES)
+    {
+        return Err(too_large());
+    }
+    let mut out = Vec::new();
+    while let Some(chunk) = resp
+        .chunk()
+        .await
+        .map_err(|e| LlmError::Http(crate::sanitizer::redact(&describe_send_error(&e))))?
+    {
+        if out.len() + chunk.len() > MAX_RESPONSE_BYTES {
+            return Err(too_large());
+        }
+        out.extend_from_slice(&chunk);
+    }
+    Ok(out)
 }
 
 fn error_message(v: &Value) -> &str {
@@ -508,6 +539,42 @@ fn take_in(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// One-shot loopback server that answers every request with `resp`.
+    async fn serve_raw(resp: &'static str) -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = l.local_addr().expect("addr");
+        tokio::spawn(async move {
+            while let Ok((mut s, _)) = l.accept().await {
+                let mut buf = [0u8; 4096];
+                let _ = s.read(&mut buf).await;
+                let _ = s.write_all(resp.as_bytes()).await;
+            }
+        });
+        format!("http://{addr}/v1")
+    }
+
+    #[tokio::test]
+    async fn an_html_error_page_reports_its_status() {
+        let base = serve_raw(
+            "HTTP/1.1 502 Bad Gateway\r\ncontent-type: text/html\r\ncontent-length: 21\r\nconnection: close\r\n\r\n<html>bad gate</html>",
+        )
+        .await;
+        let c = ExternalClient::external_provider(
+            Provider::Xai,
+            false,
+            Duration::from_secs(5),
+            crate::egress::TlsRoots::Mozilla,
+            Secret::minted("xai-test-key-0000000000000000".into()),
+            Some(&base),
+        )
+        .expect("client");
+        let e = c.list_models().await.expect_err("502");
+        assert!(e.to_string().contains("502"), "{e}");
+    }
 
     #[test]
     fn model_ids_must_match_the_provider() {

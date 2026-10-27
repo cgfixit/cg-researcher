@@ -171,16 +171,27 @@ pub async fn authorize(
             if !peer.ip().is_loopback() {
                 continue;
             }
+            // Any local process can connect here: an idle connection (or a
+            // browser preconnect) must not block the real redirect, and a
+            // request without our `state` must neither finish nor abort the flow.
             let mut buf = vec![0u8; 8192];
-            let n = s.read(&mut buf).await?;
+            let Ok(Ok(n)) = tokio::time::timeout(Duration::from_secs(10), s.read(&mut buf)).await else {
+                continue;
+            };
             let head = String::from_utf8_lossy(&buf[..n]).to_string();
             let target = head.lines().next().and_then(|l| l.split_whitespace().nth(1)).unwrap_or("/").to_string();
-            let u = url::Url::parse(&format!("http://127.0.0.1{target}"))?;
+            let Ok(u) = url::Url::parse(&format!("http://127.0.0.1{target}")) else {
+                continue;
+            };
             let q: std::collections::HashMap<_, _> = u.query_pairs().into_owned().collect();
-            let page = if q.contains_key("code") { "cg-researcher: authorized. You can close this tab." } else { "cg-researcher: authorization failed." };
+            let ours = q.get("state").is_some_and(|st| ct_eq(st, &state));
+            let page = if ours && q.contains_key("code") { "cg-researcher: authorized. You can close this tab." } else { "cg-researcher: authorization failed." };
             let _ = s
                 .write_all(format!("HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{page}", page.len()).as_bytes())
                 .await;
+            if !ours {
+                continue;
+            }
             if let Some(e) = q.get("error") {
                 anyhow::bail!("Google returned error: {}", cg_core::sanitizer::redact(e));
             }
@@ -218,6 +229,53 @@ pub async fn authorize(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn stray_local_requests_neither_finish_nor_abort_the_flow() {
+        use tokio::io::AsyncWriteExt;
+        let (tx, rx) = tokio::sync::oneshot::channel::<String>();
+        // The flow ends in an error before anything is stored.
+        let secrets = SecretStore::new(std::env::temp_dir());
+        let flow = tokio::spawn(async move {
+            authorize(
+                &Secret::minted("client-id-test".into()),
+                &Secret::minted("client-secret-test".into()),
+                &["https://www.googleapis.com/auth/gmail.readonly"],
+                &secrets,
+                |u| {
+                    let _ = tx.send(u.to_string());
+                },
+            )
+            .await
+        });
+        let u = url::Url::parse(&rx.await.expect("url")).expect("parse");
+        let q: std::collections::HashMap<_, _> = u.query_pairs().into_owned().collect();
+        let port = url::Url::parse(&q["redirect_uri"])
+            .expect("r")
+            .port()
+            .expect("port");
+        let state = q["state"].clone();
+        for path in [
+            "GET http://[bad HTTP/1.1".to_string(),
+            "GET /?code=stolen&state=wrong HTTP/1.1".to_string(),
+            "GET /?error=access_denied&state=wrong HTTP/1.1".to_string(),
+            format!("GET /?error=access_denied&state={state} HTTP/1.1"),
+        ] {
+            let mut c = tokio::net::TcpStream::connect(("127.0.0.1", port))
+                .await
+                .expect("c");
+            c.write_all(format!("{path}\r\nhost: x\r\n\r\n").as_bytes())
+                .await
+                .expect("w");
+            let mut sink = Vec::new();
+            let _ = tokio::io::AsyncReadExt::read_to_end(&mut c, &mut sink).await;
+        }
+        let e = flow
+            .await
+            .expect("join")
+            .expect_err("only our state ends it");
+        assert!(e.to_string().contains("Google returned error"), "{e}");
+    }
     use crate::common::mock;
     use std::sync::Arc;
 

@@ -51,7 +51,11 @@ pub struct AppState {
     pub control: Arc<Control>,
     pub api_key: String,
     pub limit_per_min: usize,
+    /// Authenticated requests.
     pub recent: Mutex<VecDeque<Instant>>,
+    /// The unauthenticated pairing endpoints, kept apart so a local process
+    /// hammering them cannot rate-limit an already-paired UI or API caller.
+    pub pair_recent: Mutex<VecDeque<Instant>>,
     /// UI session tokens (memory only; restart logs the UI out).
     pub sessions: Mutex<Vec<(String, Instant)>>,
     /// Single-use pairing tokens minted by `cg-researcher ui`.
@@ -73,6 +77,7 @@ impl AppState {
             api_key,
             limit_per_min,
             recent: Mutex::default(),
+            pair_recent: Mutex::default(),
             sessions: Mutex::default(),
             pairing: Mutex::default(),
             challenges: Mutex::default(),
@@ -268,7 +273,18 @@ async fn authorized(s: &AppState, h: &HeaderMap, allow_session: bool) -> bool {
 }
 
 async fn rate_ok(s: &AppState) -> bool {
-    let mut r = s.recent.lock().await;
+    take(&s.recent, s.limit_per_min).await
+}
+
+/// Pairing needs a handful of calls per `ui` run; this bounds a flood.
+const PAIR_PER_MIN: usize = 12;
+
+async fn pair_rate_ok(s: &AppState) -> bool {
+    take(&s.pair_recent, PAIR_PER_MIN).await
+}
+
+async fn take(bucket: &Mutex<VecDeque<Instant>>, limit: usize) -> bool {
+    let mut r = bucket.lock().await;
     let now = Instant::now();
     while r
         .front()
@@ -276,7 +292,7 @@ async fn rate_ok(s: &AppState) -> bool {
     {
         r.pop_front();
     }
-    if r.len() >= s.limit_per_min {
+    if r.len() >= limit {
         return false;
     }
     r.push_back(now);
@@ -347,7 +363,7 @@ async fn pair_challenge(
     State(s): State<Arc<AppState>>,
     body: Result<Json<ChallengeBody>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
-    if !rate_ok(&s).await {
+    if !pair_rate_ok(&s).await {
         return err(StatusCode::TOO_MANY_REQUESTS, "rate limited");
     }
     let b = match json_body(body) {
@@ -362,7 +378,9 @@ async fn pair_challenge(
     let now = Instant::now();
     let mut pending = s.challenges.lock().await;
     pending.retain(|(_, _, exp)| *exp > now);
-    if pending.len() >= 4 {
+    // More slots than PAIR_PER_MIN, so a flood capped by that bucket cannot
+    // evict the challenge `cg-researcher ui` is about to redeem.
+    if pending.len() >= PAIR_PER_MIN + 4 {
         pending.remove(0);
     }
     pending.push((b.nonce, challenge.clone(), now + PAIR_TTL));
@@ -373,7 +391,7 @@ async fn pair_local(
     State(s): State<Arc<AppState>>,
     body: Result<Json<LocalPairBody>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
-    if !rate_ok(&s).await {
+    if !pair_rate_ok(&s).await {
         return err(StatusCode::TOO_MANY_REQUESTS, "rate limited");
     }
     let b = match json_body(body) {
@@ -418,7 +436,7 @@ async fn session(
     State(s): State<Arc<AppState>>,
     body: Result<Json<PairBody>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
-    if !rate_ok(&s).await {
+    if !pair_rate_ok(&s).await {
         return err(StatusCode::TOO_MANY_REQUESTS, "rate limited");
     }
     let b = match json_body(body) {

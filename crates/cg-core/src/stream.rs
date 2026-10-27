@@ -52,6 +52,13 @@ impl StreamGuard {
             return;
         }
         self.raw.push_str(delta);
+        // `max_chars` below counts only text safe to show; an unclosed
+        // <think> block or one endless word keeps that empty, so cap the raw
+        // buffer too (4 bytes per char) instead of re-guarding up to the SSE cap.
+        if self.raw.len() > self.max_chars.saturating_mul(4) {
+            self.stopped = true;
+            return;
+        }
         if self.raw.len() < self.checked_len + RECHECK_BYTES && !delta.contains('\n') {
             return;
         }
@@ -104,6 +111,17 @@ fn committed(g: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hidden_text_cannot_keep_the_guard_running() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut g = StreamGuard::new(tx, 100);
+        g.push("<think>");
+        for _ in 0..100 {
+            g.push("thinking-without-end ");
+        }
+        assert!(g.stopped && g.raw.len() <= 400 + 32);
+    }
 
     fn run(chunks: &[&str]) -> (String, Vec<StreamEvent>) {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();

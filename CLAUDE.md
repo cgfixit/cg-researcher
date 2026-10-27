@@ -106,8 +106,8 @@ Kept by the `correct` pass. Each rule pairs with what fails when it is broken. W
 ## pstack / poteto-mode
 
 Agents using pstack follow poteto-mode conventions (concise answers, prove-it-works
-verification, subtract before adding). Per-role model choices live in
-`.cursor/rules/pstack-models.mdc` (always applied, budget `large (xhigh)`); every
-role is `inherit-parent` until real model slugs are confirmed, so roles run on the
-parent chat model. Re-run the `setup-pstack` skill to change them. This section does
+verification, subtract before adding). Per-role model choices lived in
+`.cursor/rules/pstack-models.mdc` (always applied, budget `large (xhigh)`), which d36481a
+removed. Without it every role is `inherit-parent` and runs on the parent chat model;
+re-run the `setup-pstack` skill to write the file again and change them. This section does
 not alter INVARIANTS.md, SECURITY.md, or `.claude/settings.json` permissions.

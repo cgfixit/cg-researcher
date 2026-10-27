@@ -54,7 +54,7 @@ local inference and inspectable decisions, with optional services behind explici
 |Audit and operation|HMAC-chained protobuf log, signed head, concurrent-writer locking, selftest, launchd and maintenance        |[Operation](#operation-and-verification)     |
 
 See the [detailed feature inventory](docs/feature.md) for component status, and the
-[verification evidence](docs/screenshots/integration/README.md) for what has actually run.
+[verification evidence](docs/verification/README.md) for what has actually run.
 
 ## Quickstart
 
@@ -280,7 +280,7 @@ launchd is preferred on macOS because it runs a missed job once after wake. If y
 
 ### Releases and acceptance
 
-[Documented native acceptance](docs/screenshots/integration/README.md) covers real Ollama, CLI,
+[Documented native acceptance](docs/verification/README.md) covers real Ollama, CLI,
 Safari corpus/attachment answers, pairing, policy controls, audit and local arm64 app packaging on
 the identified integration build. That run used keyword-only retrieval; semantic retrieval,
 vision inference, live authenticated third-party integrations, real Keychain mutation,

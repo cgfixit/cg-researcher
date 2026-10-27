@@ -12,8 +12,8 @@ regexes = ['''AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsawQ''']
 paths = ['''crates/cg-core/src/sanitizer\.rs''']
 
 [[allowlists]]
-description = "SHA-256 of a screenshot PNG recorded under docs/screenshots, not a credential"
+description = "SHA-256 of a screenshot PNG recorded under docs/screenshots or docs/verification, not a credential"
 condition = "AND"
 regexTarget = "line"
 regexes = ['''(?i)"[^"\\]+\.png"\s*:\s*"[0-9a-f]{64}"''']
-paths = ['''docs/screenshots/''']
+paths = ['''docs/(screenshots|verification)/''']

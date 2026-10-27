@@ -95,6 +95,28 @@ async fn body_json(r: axum::response::Response) -> serde_json::Value {
 }
 
 #[tokio::test]
+async fn pairing_floods_do_not_rate_limit_authenticated_callers() {
+    let (s, _d) = state(5).await;
+    let app = router(s, 4096);
+    let nonce = serde_json::json!({"nonce": "b".repeat(64)}).to_string();
+    let mut limited = false;
+    for _ in 0..40 {
+        let r = app
+            .clone()
+            .oneshot(post("/api/pair/challenge", None, &nonce))
+            .await
+            .expect("resp");
+        limited |= r.status() == StatusCode::TOO_MANY_REQUESTS;
+    }
+    assert!(limited, "the pairing endpoints are still rate limited");
+    let r = app
+        .oneshot(get("/api/status", Some(&bearer())))
+        .await
+        .expect("resp");
+    assert_ne!(r.status(), StatusCode::TOO_MANY_REQUESTS);
+}
+
+#[tokio::test]
 async fn local_pairing_authenticates_both_sides_and_consumes_challenges() {
     let (s, _d) = state(60).await;
     let app = router(s.clone(), 4096);

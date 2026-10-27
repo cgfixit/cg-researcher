@@ -802,6 +802,32 @@ async fn images_and_attachment_text_stay_local_by_default() {
 }
 
 #[tokio::test]
+async fn an_oversized_attachment_is_cut_to_the_context_budget() {
+    let h = harness(vec![text_reply("ok")], |_| {}).await;
+    let room = h.agent.local_tuning().1.context_chars;
+    let lim = crate::config::AttachmentConfig {
+        max_text_chars: room * 4,
+        ..Default::default()
+    };
+    let big = "word ".repeat(room); // 5 x room chars
+    let md = crate::attachments::parse("big.md", big.as_bytes(), &lim).expect("md");
+    let mut q = req("summarize", Origin::Cli, Arc::new(DenyAll));
+    q.attachments = vec![md];
+    h.agent.run(q).await;
+    let seen = h.mock.seen.lock().expect("lock");
+    let user = seen[0]["messages"][1]["content"]
+        .as_str()
+        .expect("text")
+        .to_string();
+    assert!(user.contains("truncated=\"true\""));
+    assert!(
+        user.chars().count() < room + 1_000,
+        "{} > {room}",
+        user.chars().count()
+    );
+}
+
+#[tokio::test]
 async fn anthropic_provider_uses_messages_api_and_labels_the_answer() {
     let h = harness_ext(vec![text_reply("from claude")], |c| {
         c.external.provider = crate::external::Provider::Anthropic;

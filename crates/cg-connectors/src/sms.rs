@@ -169,6 +169,14 @@ impl Sms {
         )
     }
 
+    /// From an allowlisted number and starting with the correct PIN
+    /// (whatever the verdict): such a message is deleted from Twilio.
+    pub fn carries_pin(&self, from: &str, body: &str) -> bool {
+        let Some(pin) = &self.pin else { return false };
+        let head = body.split_whitespace().next().unwrap_or("");
+        self.allowed.iter().any(|a| a == from) && ct_eq(head, pin.expose())
+    }
+
     /// Allowlist + PIN + lockout. Never replies to unknown numbers (costs
     /// money and confirms the agent exists).
     pub async fn check(&self, from: &str, body: &str) -> Verdict {
@@ -283,7 +291,14 @@ impl Sms {
             let body = m["body"].as_str().unwrap_or("");
             let msid = m["sid"].as_str().unwrap_or("");
             match self.check(from, body).await {
-                Verdict::Ignore => tracing::debug!("sms: ignored inbound message"),
+                Verdict::Ignore => {
+                    // A PIN-only text, or a correct-PIN text during a lockout,
+                    // is ignored but must not stay in Twilio's message log.
+                    if self.carries_pin(from, body) {
+                        self.delete(msid).await;
+                    }
+                    tracing::debug!("sms: ignored inbound message");
+                }
                 Verdict::Accept(text) => {
                     self.delete(msid).await;
                     let reply = handler
@@ -413,6 +428,14 @@ mod tests {
         assert!(
             matches!(s.check("+14045550123", "481516 x").await, Verdict::Ignore),
             "locked out even with right PIN"
+        );
+        // Ignored but PIN-bearing messages are still deleted from Twilio.
+        assert!(s.carries_pin("+14045550123", "481516 x"), "during lockout");
+        assert!(s.carries_pin("+14045550123", "481516"), "PIN only");
+        assert!(!s.carries_pin("+14045550123", "000000 x"));
+        assert!(
+            !s.carries_pin("+19995550000", "481516 hi"),
+            "not allowlisted"
         );
     }
 

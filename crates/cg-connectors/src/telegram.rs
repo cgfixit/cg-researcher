@@ -56,7 +56,14 @@ pub struct Telegram {
     limits: AttachmentConfig,
     offset: Mutex<Option<i64>>,
     recent: Mutex<VecDeque<Instant>>,
+    /// Updates a confirmer fetched while waiting for its code but did not
+    /// consume. `fetch` already moved the offset past them, so `poll_once`
+    /// handles these before fetching again.
+    pending: Mutex<VecDeque<Value>>,
 }
+
+/// Bound on `pending` (a flood during one confirmation drops the oldest).
+const MAX_PENDING: usize = 100;
 
 pub async fn build(ctx: &Ctx<'_>) -> anyhow::Result<Parts> {
     let c: TelegramConfig = crate::common::section(ctx.connectors, "telegram")?;
@@ -107,6 +114,7 @@ impl Telegram {
             limits,
             offset: Mutex::new(None),
             recent: Mutex::new(VecDeque::new()),
+            pending: Mutex::new(VecDeque::new()),
         }
     }
 
@@ -259,7 +267,13 @@ impl Telegram {
         timeout: u64,
     ) -> Result<usize, ToolError> {
         let mut handled = 0;
-        for u in self.fetch(timeout).await? {
+        let queued: Vec<Value> = self.pending.lock().await.drain(..).collect();
+        let ups = if queued.is_empty() {
+            self.fetch(timeout).await?
+        } else {
+            queued
+        };
+        for u in ups {
             let Some((chat, uid, m)) = self.accept(&u) else {
                 tracing::debug!(
                     "telegram: dropped update from non-allowlisted or non-private chat"
@@ -347,19 +361,33 @@ impl Confirmer for TelegramConfirmer {
             let Ok(ups) = self.tg.fetch(10).await else {
                 return false;
             };
-            for u in &ups {
-                if let Some((_, uid, m)) = self.tg.accept(u)
-                    && uid == self.uid
-                {
-                    let ok = m["text"]
-                        .as_str()
-                        .is_some_and(|t| crate::common::ct_eq(t.trim(), &code));
-                    let _ = self
-                        .tg
-                        .send_text(self.chat, if ok { "approved" } else { "denied" })
-                        .await;
-                    return ok;
+            let mut answer = None;
+            let mut rest = Vec::new();
+            for u in ups {
+                match self.tg.accept(&u) {
+                    Some((_, uid, m)) if uid == self.uid && answer.is_none() => {
+                        answer = Some(
+                            m["text"]
+                                .as_str()
+                                .is_some_and(|t| crate::common::ct_eq(t.trim(), &code)),
+                        );
+                    }
+                    _ => rest.push(u),
                 }
+            }
+            if !rest.is_empty() {
+                let mut q = self.tg.pending.lock().await;
+                q.extend(rest);
+                while q.len() > MAX_PENDING {
+                    q.pop_front();
+                }
+            }
+            if let Some(ok) = answer {
+                let _ = self
+                    .tg
+                    .send_text(self.chat, if ok { "approved" } else { "denied" })
+                    .await;
+                return ok;
             }
         }
         false
@@ -463,6 +491,63 @@ mod tests {
                 .count(),
             1,
             "no reply to non-allowlisted senders"
+        );
+    }
+
+    struct Confirming(StdMutex<Vec<String>>);
+    #[async_trait]
+    impl InboundHandler for Confirming {
+        async fn handle(&self, msg: Inbound, c: Arc<dyn Confirmer>) -> String {
+            if msg.text == "do it" {
+                let _ = c.confirm("send mail").await;
+            }
+            self.0.lock().expect("lock").push(msg.text);
+            "ok".into()
+        }
+    }
+
+    #[tokio::test]
+    async fn messages_fetched_during_a_confirmation_are_not_lost() {
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let c2 = calls.clone();
+        let m = mock::serve(Arc::new(move |line, _| {
+            if !line.contains("getUpdates") {
+                return (200, r#"{"ok":true,"result":{}}"#.into());
+            }
+            let r = match c2.fetch_add(1, std::sync::atomic::Ordering::SeqCst) {
+                0 => json!([upd(1, 42, 42, "private", "do it")]),
+                // While 42 is being asked for a code: 7 writes, 42 answers
+                // (wrong code) and then asks a follow-up in the same batch.
+                1 => json!([
+                    upd(2, 7, 7, "private", "from seven"),
+                    upd(3, 42, 42, "private", "000000"),
+                    upd(4, 42, 42, "private", "follow-up"),
+                ]),
+                _ => json!([]),
+            };
+            (200, json!({"ok": true, "result": r}).to_string())
+        }))
+        .await;
+        let cfg = TelegramConfig {
+            enabled: true,
+            allowed_user_ids: vec![42, 7],
+            allow_confirm: true,
+            ..Default::default()
+        };
+        let tg = Arc::new(Telegram::new(
+            mock::loopback_egress(),
+            m.base.clone(),
+            Secret::minted("123456:ABCDEFtesttoken".into()),
+            cfg,
+            AttachmentConfig::default(),
+        ));
+        let rec = Arc::new(Confirming(StdMutex::new(vec![])));
+        let h: Arc<dyn InboundHandler> = rec.clone();
+        tg.poll_once(&h, 0).await.expect("poll 1");
+        tg.poll_once(&h, 0).await.expect("poll 2");
+        assert_eq!(
+            *rec.0.lock().expect("lock"),
+            ["do it", "from seven", "follow-up"]
         );
     }
 

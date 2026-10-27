@@ -120,6 +120,8 @@ fn root_of(base_url: &str) -> String {
     b.strip_suffix("/v1").unwrap_or(b).to_string()
 }
 
+const OLLAMA_DEFAULT_NUM_CTX: u32 = 4_096;
+
 pub fn parse_ollama_show(model: &str, v: &Value) -> Option<ModelProfile> {
     let info = v["model_info"].as_object()?;
     let ctx = info
@@ -131,6 +133,22 @@ pub fn parse_ollama_show(model: &str, v: &Value) -> Option<ModelProfile> {
         .as_array()
         .map(|a| a.iter().filter_map(Value::as_str).collect())
         .unwrap_or_default();
+    // `context_length` is the model's training maximum; Ollama serves with
+    // `num_ctx` (from the Modelfile `parameters`) and silently truncates the
+    // prompt past it. Without one, assume a conservative 4096 rather than
+    // the maximum (an assumption; set `PARAMETER num_ctx` to use more).
+    let ctx = v["parameters"]
+        .as_str()
+        .and_then(|params| {
+            params.lines().find_map(|l| {
+                let mut w = l.split_whitespace();
+                (w.next() == Some("num_ctx"))
+                    .then(|| w.next()?.parse::<u32>().ok())
+                    .flatten()
+            })
+        })
+        .unwrap_or(OLLAMA_DEFAULT_NUM_CTX)
+        .min(ctx);
     let mut p = builtin("ollama", model);
     p.context_tokens = ctx;
     p.max_output_tokens = ctx / 2;
@@ -220,7 +238,17 @@ mod tests {
         let v = json!({"model_info":{"qwen3.context_length":40960,"general.architecture":"qwen3"},
             "capabilities":["completion","tools"]});
         let p = parse_ollama_show("qwen3:8b", &v).expect("p");
-        assert_eq!((p.context_tokens, p.tools, p.vision), (40_960, true, false));
+        // No num_ctx: the conservative runtime default, not the 40k maximum.
+        assert_eq!((p.context_tokens, p.tools, p.vision), (4_096, true, false));
+        let v = json!({"model_info":{"qwen3.context_length":40960},
+            "parameters":"temperature 0.6\nnum_ctx                        16384\n"});
+        assert_eq!(
+            parse_ollama_show("m", &v).expect("p").context_tokens,
+            16_384
+        );
+        let v = json!({"model_info":{"qwen3.context_length":8192},
+            "parameters":"num_ctx 65536"});
+        assert_eq!(parse_ollama_show("m", &v).expect("p").context_tokens, 8_192);
         assert_eq!(p.source, ProfileSource::Probe);
         let v = json!({"id":"qwen2.5-vl","type":"vlm","max_context_length":32768});
         let p = parse_lmstudio("qwen2.5-vl", &v).expect("p");
