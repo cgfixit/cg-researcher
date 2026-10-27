@@ -9,6 +9,9 @@
 #   --print-plist      print the service plist and exit (used by CI to lint it)
 #   --print-maintenance-plist  print the maintenance plist and exit
 set -euo pipefail
+# bash >= 5.2 (Homebrew, first in PATH) expands `&` in ${s//x/y} replacements,
+# which breaks xml_escape; stock /bin/bash 3.2 has no such option.
+shopt -u patsub_replacement 2>/dev/null || true
 umask 077
 
 LABEL="com.cgfixit.cg-researcher"

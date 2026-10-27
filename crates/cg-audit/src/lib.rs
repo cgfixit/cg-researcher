@@ -39,6 +39,8 @@ pub enum AuditError {
     Tampered(u64),
     #[error("audit frame is corrupt")]
     Corrupt,
+    #[error("audit record too large to store")]
+    TooLarge,
     #[error("random source unavailable")]
     Random,
     #[error("audit log truncated: head says {expected} records, file has {found}")]
@@ -154,9 +156,49 @@ fn now_ms() -> i64 {
 }
 
 fn cut(s: &mut String) {
-    if s.chars().count() > MAX_DETAIL_CHARS {
-        *s = s.chars().take(MAX_DETAIL_CHARS).collect();
+    cut_to(s, MAX_DETAIL_CHARS);
+}
+
+fn cut_to(s: &mut String, max: usize) {
+    if s.chars().count() > max {
+        *s = s.chars().take(max).collect();
     }
+}
+
+/// Tool decisions kept per record; one model round can request any number.
+const MAX_TOOLS: usize = 32;
+const MAX_PATH: usize = 128;
+const MAX_NAME_CHARS: usize = 128;
+
+/// Bound every field a model or caller can grow, so a record always fits in
+/// one `MAX_FRAME` (`read_all` refuses larger frames, and a log it cannot
+/// read is a log the app refuses to open). Worst case is about 150 KiB.
+fn bound(rec: &mut AuditRecord) {
+    for f in [
+        &mut rec.event,
+        &mut rec.answer_model,
+        &mut rec.outcome,
+        &mut rec.query_fingerprint,
+        &mut rec.sender_fingerprint,
+    ] {
+        cut_to(f, MAX_NAME_CHARS);
+    }
+    rec.node_path.truncate(MAX_PATH);
+    for n in &mut rec.node_path {
+        cut_to(n, MAX_NAME_CHARS);
+    }
+    let omitted = rec.tools.len().saturating_sub(MAX_TOOLS);
+    rec.tools.truncate(MAX_TOOLS);
+    for t in &mut rec.tools {
+        cut_to(&mut t.tool, MAX_NAME_CHARS);
+        cut_to(&mut t.decision, MAX_NAME_CHARS);
+        cut_to(&mut t.args_fingerprint, MAX_NAME_CHARS);
+        cut(&mut t.reason);
+    }
+    if omitted > 0 {
+        rec.detail = format!("[{omitted} tool decisions omitted] {}", rec.detail);
+    }
+    cut(&mut rec.detail);
 }
 
 /// Decode every frame in a file. Errors on a truncated or oversized frame.
@@ -361,10 +403,10 @@ impl AuditLog {
 
     /// Append one record. `seq`, `ts`, `prev_mac` and `mac` are filled here.
     pub fn append(&self, mut rec: AuditRecord) -> Result<u64, AuditError> {
-        cut(&mut rec.detail);
-        cut(&mut rec.outcome);
-        for t in &mut rec.tools {
-            cut(&mut t.reason);
+        bound(&mut rec);
+        // prev_mac + mac add 2 x 32 bytes after this check.
+        if rec.encoded_len() + 128 > MAX_FRAME {
+            return Err(AuditError::TooLarge);
         }
         let mut st = self.state.lock().unwrap_or_else(|p| p.into_inner());
         // Cross-process exclusion: `serve`, `chat` and the scheduled
@@ -412,6 +454,38 @@ mod tests {
             event: event.into(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn oversized_fields_are_bounded_and_the_log_stays_readable() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let p = dir.path().join("audit.pb");
+        let key = [3u8; 32];
+        let log = AuditLog::open(&p, &key).expect("open");
+        // Unbounded, this record would encode to ~80 MB, far over MAX_FRAME.
+        let huge = "\u{1F600}".repeat(5_000);
+        let mut r = rec(&huge);
+        r.answer_model = huge.clone();
+        r.outcome = huge.clone();
+        r.detail = huge.clone();
+        r.node_path = vec![huge.clone(); 500];
+        r.tools = (0..1_000)
+            .map(|_| ToolDecision {
+                tool: huge.clone(),
+                decision: huge.clone(),
+                reason: huge.clone(),
+                args_fingerprint: huge.clone(),
+                duration_ms: 1,
+            })
+            .collect();
+        log.append(r).expect("bounded record appends");
+        log.append(rec("after")).expect("chain continues");
+        let all = read_all(&p).expect("log still reads");
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].tools.len(), MAX_TOOLS);
+        assert!(all[0].detail.starts_with("[968 tool decisions omitted]"));
+        assert_eq!(verify(&p, &Keys::from_master(&key)).expect("verify"), 2);
+        AuditLog::open(&p, &key).expect("reopens");
     }
 
     #[test]

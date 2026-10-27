@@ -309,7 +309,11 @@ impl Telegram {
             } else {
                 format!("{reply}\n\n(attachment notes: {})", errs.join("; "))
             };
-            self.send_text(chat, &reply).await?;
+            // The offset already moved past this whole batch, so one failed
+            // reply must not drop the messages after it.
+            if let Err(e) = self.send_text(chat, &reply).await {
+                tracing::warn!("telegram: reply failed: {e}");
+            }
             handled += 1;
         }
         Ok(handled)

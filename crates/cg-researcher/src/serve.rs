@@ -596,15 +596,24 @@ async fn apply_settings(
             &cg_core::sanitizer::redact(&e.to_string()),
         )
     })?;
+    // I8: a relaxation is recorded before it takes effect. If the audit
+    // append fails, the change is not applied.
+    if !relax.is_empty() {
+        s.control
+            .try_event("policy_relaxed", format!("{relax:?}"))
+            .map_err(|e| {
+                err(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    &format!("audit append failed, change not applied: {e}"),
+                )
+            })?;
+    }
     cg_core::settings::write(&path, &overlay)
         .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
     *s.slot.write().await = agent.clone();
     let keys: Vec<&String> = changes.keys().collect();
     s.control
         .event("settings_changed", format!("keys={keys:?}"));
-    if !relax.is_empty() {
-        s.control.event("policy_relaxed", format!("{relax:?}"));
-    }
     let (lp, lt) = agent.local_tuning();
     Ok(json!({
         "ok": true, "relaxations": relax,

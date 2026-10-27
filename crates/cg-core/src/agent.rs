@@ -386,12 +386,15 @@ impl Agent {
             path: Vec::new(),
             stream,
         };
-        let (s, trace, err) = self
+        let (mut s, trace, err) = self
             .graph
             .invoke(state, self.deps.cfg.agent.max_steps)
             .await;
         if let Some(e) = err {
             tracing::warn!("graph ended early: {e}");
+        }
+        if !trace.path.contains(&"guardrail_output") {
+            guard_answer(&mut s);
         }
         TurnResult {
             answer: s.answer,
@@ -625,7 +628,7 @@ fn first_messages(d: &Deps, s: &mut TurnState) {
             s.tainted = true;
             user.push_str(&format!(
                 "<untrusted source=\"corpus\" name=\"{}\">\n{clean}</untrusted>\n",
-                h.source.replace('"', "'")
+                crate::sanitizer::attr_value(&h.source)
             ));
         }
         user.push('\n');
@@ -802,7 +805,10 @@ async fn tool_gate(d: &Deps, mut s: TurnState) -> TurnState {
                         args,
                     }
                 } else {
-                    let mut summary = tool.describe(&args);
+                    // The summary carries model-chosen text (a mail body):
+                    // escape terminal controls so it cannot redraw the
+                    // recipient line the operator is approving.
+                    let mut summary = crate::sanitizer::printable(&tool.describe(&args));
                     if s.tainted {
                         summary.push_str("  [turn contains untrusted content]");
                     }
@@ -853,20 +859,21 @@ async fn tool_exec(d: &Deps, mut s: TurnState) -> TurnState {
             (format!("DENIED: {}", item.reason), item.decision)
         };
         let mut output = redact(&output);
-        if spec.as_ref().is_some_and(|t| t.untrusted_output) && item.allowed {
-            let (clean, _) = sanitize_untrusted(&output);
-            s.tainted = true;
-            output = format!(
-                "<untrusted source=\"tool:{}\">\n{clean}</untrusted>",
-                item.call.name
-            );
-        }
+        // Cut before wrapping, so a full-size result keeps its closing tag.
         if output.chars().count() > d.cfg.tools.max_tool_output_chars {
             output = output
                 .chars()
                 .take(d.cfg.tools.max_tool_output_chars)
                 .collect::<String>()
                 + "\n[truncated]";
+        }
+        if spec.as_ref().is_some_and(|t| t.untrusted_output) && item.allowed {
+            let (clean, _) = sanitize_untrusted(&output);
+            s.tainted = true;
+            output = format!(
+                "<untrusted source=\"tool:{}\">\n{clean}</untrusted>",
+                crate::sanitizer::attr_value(&item.call.name)
+            );
         }
         s.tool_log.push(ToolDecision {
             tool: item.call.name.clone(),
@@ -928,7 +935,7 @@ fn outbound(d: &Deps, s: &mut TurnState, vision: bool) -> (String, Vec<String>, 
             s.tainted |= flagged;
             let block = format!(
                 "\n\n<untrusted source=\"corpus\" name=\"{}\">\n{clean}</untrusted>",
-                h.source.replace('"', "'")
+                crate::sanitizer::attr_value(&h.source)
             );
             ctx_chars += block.chars().count();
             user.push_str(&block);
@@ -1022,6 +1029,14 @@ async fn external_fallback(d: &Deps, mut s: TurnState) -> TurnState {
 }
 
 async fn guardrail_output(_d: &Deps, mut s: TurnState) -> TurnState {
+    guard_answer(&mut s);
+    s
+}
+
+/// Redact, defang and cap the answer. Runs exactly once per turn: as the
+/// `guardrail_output` node, or after `invoke` when a step budget sent the
+/// graph straight to the sink and skipped that node.
+fn guard_answer(s: &mut TurnState) {
     let (a, defanged) = crate::sanitizer::guard_output_text(&s.answer);
     if defanged > 0 {
         s.detail = format!("{} output_links_defanged={defanged}", s.detail)
@@ -1036,7 +1051,6 @@ async fn guardrail_output(_d: &Deps, mut s: TurnState) -> TurnState {
         a = "(no answer)".into();
     }
     s.answer = a;
-    s
 }
 
 async fn audit_logger(d: &Deps, mut s: TurnState) -> TurnState {

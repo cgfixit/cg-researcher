@@ -185,11 +185,16 @@ impl Control {
     }
 
     pub fn event(&self, event: &str, detail: String) {
-        let _ = self.audit.append(AuditRecord {
+        let _ = self.try_event(event, detail);
+    }
+
+    /// For records a change must not happen without (I8 `policy_relaxed`).
+    pub fn try_event(&self, event: &str, detail: String) -> Result<u64, cg_audit::AuditError> {
+        self.audit.append(AuditRecord {
             event: event.into(),
             origin: cg_audit::Origin::Http as i32,
             detail,
             ..Default::default()
-        });
+        })
     }
 }

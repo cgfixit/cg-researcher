@@ -155,8 +155,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         Cmd::Serve { no_gateways } => {
             let r = Runtime::load(home)?;
             let (agent, gateways, enabled) = r.agent().await?;
-            let key = std::fs::read_to_string(r.layout.api_key())
-                .map_err(|_| anyhow::anyhow!("no API key; run `cg-researcher init`"))?;
+            let key = read_api_key(&r.layout)?;
             let slot: Arc<AgentSlot> = Arc::new(tokio::sync::RwLock::new(agent));
             let state = Arc::new(serve::AppState::new(
                 slot.clone(),
@@ -622,10 +621,23 @@ async fn app(home: PathBuf) -> anyhow::Result<()> {
     ui(home, false).await
 }
 
+/// The local API key, trimmed. An empty or short key would let any local
+/// process compute the pairing proof, so `serve` and `ui` refuse to start.
+fn read_api_key(layout: &cg_core::paths::Layout) -> anyhow::Result<String> {
+    let key = std::fs::read_to_string(layout.api_key())
+        .map_err(|_| anyhow::anyhow!("no API key; run `cg-researcher init`"))?;
+    let key = key.trim().to_string();
+    anyhow::ensure!(
+        key.len() >= 32 && !key.chars().any(char::is_whitespace),
+        "API key at {} is empty or too short; delete it and run `cg-researcher init` to mint a new one",
+        layout.api_key().display()
+    );
+    Ok(key)
+}
+
 async fn ui(home: PathBuf, print: bool) -> anyhow::Result<()> {
     let r = Runtime::load(home)?;
-    let key = std::fs::read_to_string(r.layout.api_key())
-        .map_err(|_| anyhow::anyhow!("no API key; run `cg-researcher init`"))?;
+    let key = read_api_key(&r.layout)?;
     let addr = launcher_addr(&r.cfg.server.host, r.cfg.server.port)?;
     let base = format!("http://{addr}");
     let egress =

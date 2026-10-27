@@ -257,7 +257,7 @@ pub fn as_prompt_block(a: &Attachment) -> Option<(String, bool)> {
     Some((
         format!(
             "<untrusted source=\"attachment\" name=\"{}\" type=\"{}\"{note}>\n{clean}</untrusted>",
-            a.name.replace('"', "'"),
+            crate::sanitizer::attr_value(&a.name),
             a.kind.label()
         ),
         flagged,

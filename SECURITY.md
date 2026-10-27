@@ -126,6 +126,12 @@ Assumed attacker: a malicious web page in the same browser. Mitigations:
   is the only source beyond self; the shipped UI renders no images, so it is unused headroom today), plus nosniff, no-referrer, no-store, COOP/CORP and a Permissions-Policy.
   All model or server text is rendered with `textContent`; a test fails the build on any
   HTML-string sink.
+- Settings: a relaxation's `policy_relaxed` audit record is appended before the overlay is written
+  or the new agent swapped in; if that append fails, the change is refused (I8). External key refs
+  from the UI may name only that provider's own stored key (`keychain:cg-researcher/<provider>_api_key`
+  or `file:<provider>_api_key`), so a session cannot point the provider at `api.key`, `audit.key` or
+  another stored secret and have it sent as an API key. `serve` and `ui` refuse an empty or short
+  `api.key`, which would make the pairing proof computable by anyone.
 - Streamed answers (`/query/stream`) pass the same output guard as final answers before they leave
   the process. The guard re-runs over the whole buffered answer, stops streaming if guarding would
   change text already sent, and holds back the tail that could still be the start of a secret.

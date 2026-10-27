@@ -297,7 +297,11 @@ impl Sms {
                             Arc::new(DenyAll),
                         )
                         .await;
-                    self.reply(from, &reply).await?;
+                    // `seen` already holds this whole page, so one failed reply
+                    // must not drop the messages after it.
+                    if let Err(e) = self.reply(from, &reply).await {
+                        tracing::warn!("sms: reply failed: {e}");
+                    }
                     handled += 1;
                 }
             }

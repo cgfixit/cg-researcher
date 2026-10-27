@@ -60,16 +60,22 @@ pub fn check_overlay(t: &toml::Table) -> anyhow::Result<()> {
             "settings overlay may not set `{k}`"
         );
     }
-    // Key refs may only point at the Keychain or the owner-only secrets dir.
-    for k in ["anthropic_key_ref", "xai_key_ref"] {
+    // Key refs may only name that provider's own stored key (what the Keys
+    // tab writes). Any other file or Keychain item would be sent to the
+    // provider as its API key: `file:api.key` or `file:audit.key` would ship
+    // a local secret off the machine.
+    for (k, name) in [
+        ("anthropic_key_ref", "anthropic_api_key"),
+        ("xai_key_ref", "xai_api_key"),
+    ] {
         if let Some(v) = t
             .get("external")
             .and_then(|e| e.get(k))
             .and_then(|v| v.as_str())
         {
             anyhow::ensure!(
-                v.starts_with("keychain:cg-researcher/") || v.starts_with("file:"),
-                "external.{k} from the UI must be keychain:cg-researcher/… or file:…"
+                v == format!("keychain:cg-researcher/{name}") || v == format!("file:{name}"),
+                "external.{k} from the UI must be keychain:cg-researcher/{name} or file:{name}"
             );
         }
     }
@@ -204,10 +210,19 @@ mod tests {
             "[tools]\nauto_approve_writes = true\n",
             "[connectors.telegram]\nenabled = true\n",
             "[external]\nanthropic_key_ref = \"env:HOME\"\n",
+            "[external]\nanthropic_key_ref = \"file:api.key\"\n",
+            "[external]\nxai_key_ref = \"file:audit.key\"\n",
+            "[external]\nxai_key_ref = \"keychain:cg-researcher/anthropic_api_key\"\n",
             "[external]\ntls_roots = \"system\"\n",
             "[external.rules]\nsend_local_contxt = true\n",
         ] {
             assert!(cfg_with(bad).is_err(), "{bad}");
+        }
+        for good in [
+            "[external]\nanthropic_key_ref = \"file:anthropic_api_key\"\n",
+            "[external]\nxai_key_ref = \"keychain:cg-researcher/xai_api_key\"\n",
+        ] {
+            assert!(cfg_with(good).is_ok(), "{good}");
         }
         // Whitelisted key with an invalid value still fails validation.
         assert!(cfg_with("[external.rules]\ntemperature = 9.0\n").is_err());

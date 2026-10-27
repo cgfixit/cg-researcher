@@ -59,8 +59,9 @@ fn valid_id(s: &str) -> bool {
 }
 
 /// RFC 5322 header-safe single address: no CR/LF, no commas, one `@`.
+/// Checks the exact string `build_raw` writes: trimming here would let a
+/// leading or trailing CR/LF through into the `To:` header.
 pub fn valid_addr(s: &str) -> bool {
-    let s = s.trim();
     s.len() <= 254
         && !s
             .chars()
@@ -324,6 +325,10 @@ mod tests {
     #[test]
     fn header_injection_refused() {
         assert!(build_raw("a@b.com\r\nBcc: evil@x.com", "s", "b").is_err());
+        // Leading/trailing CR/LF must not survive a trim-then-check.
+        assert!(build_raw("\r\nBcc:evil@x.com", "s", "b").is_err());
+        assert!(build_raw("a@b.com\r\n", "s", "b").is_err());
+        assert!(build_raw(" a@b.com", "s", "b").is_err());
         assert!(build_raw("a@b.com, evil@x.com", "s", "b").is_err());
         assert!(build_raw("a@b.com", "hi\r\nBcc: evil@x.com", "b").is_err());
         let raw = build_raw("a@b.com", "Hello ✓", "body\r\nBcc: not-a-header").expect("ok");
