@@ -19,6 +19,7 @@ use cg_core::secrets::SecretStore;
 use cg_core::tools::{Gateway, Tool, ToolRegistry};
 
 pub mod common;
+pub mod fetch_page;
 pub mod gcal;
 pub mod gmail;
 pub mod google;
@@ -52,6 +53,7 @@ macro_rules! entry {
 /// The connector registry. Order is the tool-listing order.
 pub const REGISTRY: &[(&str, BuildFn)] = &[
     entry!("web_search", web_search),
+    entry!("fetch_page", fetch_page),
     entry!("netconnect", netconnect),
     entry!("telegram", telegram),
     entry!("gmail", gmail),

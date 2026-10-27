@@ -88,8 +88,14 @@ client is an `Egress`, which pins hosts, refuses redirects and proxies, and chec
   - The Mozilla-roots path does no OCSP/CRL revocation checking. The `system` path on macOS uses
     Apple's checks, which are soft-fail.
   - The compiled-in root set only changes when `webpki-root-certs` is bumped (Dependabot).
-  - Connectors (Google, Telegram, Twilio, SerpAPI) still use the OS trust store, so a locally
-    installed root can intercept them.
+  - Connectors (Google, Telegram, Twilio, SerpAPI, and the hosts you pin for `fetch_page`) still use
+    the OS trust store, so a locally installed root can intercept them.
+  - `fetch_page` and `research` add no new gate. `fetch_page` reads only hosts pinned in cg.toml
+    (not reachable from the UI overlay); its output is untrusted and taints the turn. `research` is a
+    loop of ordinary turns run as the System origin with `confirm_online = false` and a deny-all
+    confirmer, so a job never reaches an external model and never runs a write tool. A page on a
+    pinned host can still carry prompt injection; the sanitizer and taint rules are the defence,
+    exactly as for `web_search` results.
 
 ## Supply chain
 

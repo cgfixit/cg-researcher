@@ -91,6 +91,11 @@ serpapi_key_ref = "env:SERPAPI_API_KEY"
 allow_public_google = false   # fallback only when SerpAPI is unconfigured/unreachable, never on key rejection
 max_results = 5
 
+[connectors.fetch_page]
+enabled = false
+hosts = []                    # exact host names it may read, e.g. ["docs.rs"]; enabled with none is a startup error
+max_chars = 8000
+
 [connectors.netconnect]
 enabled = false
 allowed_cidrs = []            # IPv4 only, must sit inside RFC1918 or 127/8, e.g. ["192.168.1.0/24"]
