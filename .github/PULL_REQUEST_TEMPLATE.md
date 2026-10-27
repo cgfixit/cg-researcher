@@ -25,7 +25,8 @@ Branch / title / integration policy:
 functions/settings, intended behavior, deliberate non-goals, and related issues. -->
 ## McLuhan Tetrad
 <!-- Analyze this change as a medium. Four simultaneous effects (not sequential).
-Replace prompts with evidence from the diff. Use N/A + reason where none apply. -->
+Replace prompts with evidence from the diff. Use N/A + reason where none apply.
+Bring each line back to the literal: name the file, setting, or command it refers to, and for **Reverses into** state the actual failure, how bad it is, and the signal that shows it (worst first, each also listed under Risks to monitor); write N/A instead of inventing an effect. -->
 - **Enhances**: <!-- What capability, process, or signal does this amplify? -->
 - **Obsolesces**: <!-- What prior practice, tool, path, or default does this push aside? -->
 - **Retrieves**: <!-- What earlier pattern, constraint, or safeguard does this revive? -->
