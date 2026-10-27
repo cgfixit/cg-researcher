@@ -124,12 +124,14 @@ pub fn plan_prompt(question: &str, n: usize) -> String {
 /// untrusted; each item is only ever used as the query of a further ordinary
 /// turn, which `guardrail_input` scans like any other query.
 pub fn parse_plan(answer: &str, max: usize) -> Option<Vec<String>> {
-    let start = answer.find('[')?;
-    let end = answer.rfind(']')?;
-    if end <= start {
-        return None;
-    }
-    let items: Vec<String> = serde_json::from_str(&answer[start..=end]).ok()?;
+    // The first `[` that starts a JSON array of strings; whatever follows it
+    // (a citation like "[1]", more prose) is ignored.
+    let items: Vec<String> = answer.match_indices('[').find_map(|(i, _)| {
+        serde_json::Deserializer::from_str(&answer[i..])
+            .into_iter::<Vec<String>>()
+            .next()?
+            .ok()
+    })?;
     let mut out: Vec<String> = Vec::new();
     for q in items {
         let q: String = q
@@ -210,6 +212,12 @@ pub fn report_markdown(job: &Job) -> String {
     s
 }
 
+/// The local model was unreachable or failed. Nothing from such a turn is
+/// saved, so `--resume` retries it instead of keeping the error text.
+fn failed(r: &cg_core::agent::TurnResult) -> bool {
+    r.answer_model == "local-error"
+}
+
 fn request(query: String, attachments: Vec<attachments::Attachment>) -> TurnRequest {
     TurnRequest {
         query,
@@ -240,6 +248,12 @@ pub async fn run(
                 Vec::new(),
             ))
             .await;
+        anyhow::ensure!(
+            !failed(&r),
+            "planning turn failed: {}; nothing saved, retry with `cg-researcher research --resume {}`",
+            r.answer,
+            job.id
+        );
         let plan = parse_plan(&r.answer, job.max_subquestions).unwrap_or_else(|| {
             eprintln!(
                 "[research {}] planner gave no usable list; researching the question directly",
@@ -277,6 +291,14 @@ pub async fn run(
         let r = agent
             .run(request(step_prompt(&job.question, sub), Vec::new()))
             .await;
+        anyhow::ensure!(
+            !failed(&r),
+            "step {} failed: {}; {} step(s) saved, continue with `cg-researcher research --resume {}`",
+            i + 1,
+            r.answer,
+            job.steps.len(),
+            job.id
+        );
         job.steps.push(Step {
             question: sub.clone(),
             answer: r.answer,
@@ -310,7 +332,21 @@ pub async fn run(
         let r = agent
             .run(request(synth_prompt(&job.question), vec![att]))
             .await;
-        job.report = Some(r.answer);
+        anyhow::ensure!(
+            !failed(&r),
+            "synthesis failed: {}; steps are saved, retry with `cg-researcher research --resume {}`",
+            r.answer,
+            job.id
+        );
+        // A guardrail block is deterministic (retrying would block again), so
+        // it is recorded as the outcome, with the steps still in the report.
+        job.report = Some(if r.blocked {
+            "(The synthesis turn was blocked by the input guardrail, usually because collected \
+             text matched an injection pattern. The individual steps are below.)"
+                .to_string()
+        } else {
+            r.answer
+        });
         job.report_tainted = r.tainted;
         save(dir, job)?;
     }
@@ -336,6 +372,10 @@ mod tests {
     #[test]
     fn plan_is_parsed_strictly_and_deduplicated() {
         let p = parse_plan(r#"Sure: ["A?", " a? ", "", "B  \n c?"] trailing"#, 6).expect("plan");
+        assert_eq!(
+            parse_plan(r#"Per [1]: ["X?", "Y?"] (see [2])"#, 6),
+            Some(vec!["X?".to_string(), "Y?".to_string()])
+        );
         assert_eq!(p, vec!["A?".to_string(), "B c?".to_string()]);
         assert_eq!(parse_plan(r#"["1","2","3"]"#, 2).map(|p| p.len()), Some(2));
         assert!(parse_plan("no list here", 6).is_none());
