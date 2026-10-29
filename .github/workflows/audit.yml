@@ -10,8 +10,8 @@ permissions:
   contents: read
 jobs:
   cargo-audit:
-    # Repo variable SCHEDULED_JOBS=false stops this job's cron runs (see README).
-    if: github.event_name != 'schedule' || vars.SCHEDULED_JOBS != 'false'
+    # Cron runs are off unless repo variable SCHEDULED_JOBS=true (see README).
+    if: github.event_name != 'schedule' || vars.SCHEDULED_JOBS == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -24,8 +24,8 @@ jobs:
       - run: cargo install cargo-audit --version 0.22.2 --locked
       - run: cargo audit --deny warnings
   cargo-deny:
-    # Repo variable SCHEDULED_JOBS=false stops this job's cron runs (see README).
-    if: github.event_name != 'schedule' || vars.SCHEDULED_JOBS != 'false'
+    # Cron runs are off unless repo variable SCHEDULED_JOBS=true (see README).
+    if: github.event_name != 'schedule' || vars.SCHEDULED_JOBS == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

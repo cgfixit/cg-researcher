@@ -12,9 +12,10 @@ name: release
 #     main's tip has no `v*` tag and no complete GitHub Release for that commit.
 #     A previous green run is not a publication: artifact-only successes from
 #     the old manual path leave the nightly free to cut.
-#     Off switch: repo variable NIGHTLY_RELEASE=false (or SCHEDULED_JOBS=false,
-#     which stops every cron in .github/workflows) skips `gate`, so nothing
-#     builds or publishes on the schedule. Tags and dispatch are unaffected.
+#     Off by default: the schedule only runs `gate` when repo variable
+#     NIGHTLY_RELEASE=true (nightly only) or SCHEDULED_JOBS=true (every cron
+#     in .github/workflows) is set; otherwise nothing builds or publishes on
+#     the schedule. Tags and dispatch are unaffected.
 # Artifacts:
 #   * app-arm64: Apple Silicon cg-researcher.app (aarch64-apple-darwin), zipped
 #     with ditto + SHA-256; build provenance attested when the repo is public
@@ -40,7 +41,7 @@ concurrency:
 jobs:
   gate:
     name: decide what this run publishes
-    if: github.event_name != 'schedule' || (vars.SCHEDULED_JOBS != 'false' && vars.NIGHTLY_RELEASE != 'false')
+    if: github.event_name != 'schedule' || (vars.SCHEDULED_JOBS == 'true' || vars.NIGHTLY_RELEASE == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

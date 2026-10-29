@@ -12,8 +12,8 @@ permissions:
   contents: read
 jobs:
   actionlint:
-    # Repo variable SCHEDULED_JOBS=false stops this job's cron runs (see README).
-    if: github.event_name != 'schedule' || vars.SCHEDULED_JOBS != 'false'
+    # Cron runs are off unless repo variable SCHEDULED_JOBS=true (see README).
+    if: github.event_name != 'schedule' || vars.SCHEDULED_JOBS == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -40,8 +40,8 @@ jobs:
       - name: uninstaller path safety (stubbed platform commands)
         run: python3 scripts/test-uninstall.py
   zizmor:
-    # Repo variable SCHEDULED_JOBS=false stops this job's cron runs (see README).
-    if: github.event_name != 'schedule' || vars.SCHEDULED_JOBS != 'false'
+    # Cron runs are off unless repo variable SCHEDULED_JOBS=true (see README).
+    if: github.event_name != 'schedule' || vars.SCHEDULED_JOBS == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
