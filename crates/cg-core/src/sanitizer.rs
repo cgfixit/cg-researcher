@@ -187,7 +187,19 @@ pub fn redact(text: &str) -> String {
 /// Shared by `guardrail_output` and the streaming guard so provisional
 /// streamed text and the final answer pass through the same function.
 pub fn guard_output_text(text: &str) -> (String, usize) {
-    defang_output_links(&redact(text))
+    let (mut out, mut n) = defang_output_links(&redact(text));
+    // Unwrapping a link can join text into a new secret shape
+    // (`Bearer [a](https://h#f)` -> `Bearer a (h)`), so repeat until stable.
+    for _ in 0..4 {
+        let r = redact(&out);
+        if r == out {
+            break;
+        }
+        let (d, k) = defang_output_links(&r);
+        out = d;
+        n += k;
+    }
+    (out, n)
 }
 
 fn md_image() -> &'static Regex {
@@ -246,6 +258,15 @@ mod tests {
         assert!(o.contains("[image removed: evil.example]"));
         assert!(o.contains("[docs](https://ok.example/a)"));
         assert!(o.contains("c (e.example)"));
+    }
+
+    #[test]
+    fn defanged_link_text_cannot_form_a_secret_shape() {
+        // fuzz/stream crash-88c5624254b92d68056c5e52fa7bfae6d658c276
+        let (o, n) = guard_output_text("x Bearer [a](https://0p#f) y");
+        assert_eq!(n, 1);
+        assert_eq!(redact(&o), o, "{o}");
+        assert!(!o.contains("Bearer"), "{o}");
     }
 
     #[test]
