@@ -27,6 +27,8 @@ concurrency:
   cancel-in-progress: true
 jobs:
   fuzz:
+    # Repo variable SCHEDULED_JOBS=false stops this job's cron runs (see README).
+    if: github.event_name != 'schedule' || vars.SCHEDULED_JOBS != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

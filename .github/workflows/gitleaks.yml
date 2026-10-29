@@ -13,6 +13,8 @@ permissions:
   contents: read
 jobs:
   scan:
+    # Repo variable SCHEDULED_JOBS=false stops this job's cron runs (see README).
+    if: github.event_name != 'schedule' || vars.SCHEDULED_JOBS != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
