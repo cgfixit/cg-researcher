@@ -258,6 +258,12 @@ Tagged v* runs publish a public GitHub Release immediately. Manual `workflow_dis
 them Latest. The schedule cuts one when main's tip has no `v*` tag and no complete release for that
 commit; a previous green artifact-only run does not count. Re-running dispatch on a SHA that already
 has a complete auto release skips the rebuild. See `.github/workflows/release.yml`.
+Scheduled (cron) runs are off by default and switched on by repository variables (Settings → Secrets and
+variables → Actions → Variables): `NIGHTLY_RELEASE=true` enables only the daily nightly prerelease;
+`SCHEDULED_JOBS=true` enables every cron (nightly, weekly CI, audit, gitleaks, fuzz, workflow lint).
+Unset or any other value keeps them off. Push, pull request, tag and manual runs are not affected.
+Note that this includes the weekly security scans (gitleaks, cargo audit/deny, fuzz); enable `SCHEDULED_JOBS` to keep them.
+The app itself schedules nothing unless `install.sh --maintenance` (or `--service`) was used.
 Uninstall keeps your data; --purge requires typing delete before deleting the app home and Keychain items.
 
 <details>

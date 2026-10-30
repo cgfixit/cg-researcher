@@ -23,6 +23,8 @@ env:
   CARGO_INCREMENTAL: "0"
 jobs:
   test:
+    # Cron runs are off unless repo variable SCHEDULED_JOBS=true (see README).
+    if: github.event_name != 'schedule' || vars.SCHEDULED_JOBS == 'true'
     name: fmt / clippy / test (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -66,7 +68,8 @@ jobs:
   install-smoke:
     name: install.sh --service / launchd / uninstall (macos-15)
     # Release build on a 3-core runner is the slowest job; skip it on PRs.
-    if: github.event_name != 'pull_request'
+    # Cron runs are off unless repo variable SCHEDULED_JOBS=true (see README).
+    if: github.event_name != 'pull_request' && (github.event_name != 'schedule' || vars.SCHEDULED_JOBS == 'true')
     runs-on: macos-15
     timeout-minutes: 45
     steps:
@@ -153,6 +156,8 @@ jobs:
         run: tail -n 100 "$RUNNER_TEMP/cgh/logs/serve.stderr.log" 2>/dev/null || true
 
   msrv:
+    # Cron runs are off unless repo variable SCHEDULED_JOBS=true (see README).
+    if: github.event_name != 'schedule' || vars.SCHEDULED_JOBS == 'true'
     name: build on rust-version 1.90 (macos-15)
     runs-on: macos-15
     timeout-minutes: 30
